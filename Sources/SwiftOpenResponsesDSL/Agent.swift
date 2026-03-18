@@ -25,6 +25,7 @@ public struct AgentTool: Sendable {
 	public let tool: FunctionToolParam
 	public let handler: ToolSession.ToolHandler
 
+	/// Creates an AgentTool with a tool definition and its handler closure.
 	public init(tool: FunctionToolParam, handler: @escaping ToolSession.ToolHandler) {
 		self.tool = tool
 		self.handler = handler

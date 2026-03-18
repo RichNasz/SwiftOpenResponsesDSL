@@ -70,6 +70,7 @@ public enum LLMError: Error, Equatable {
 
 // MARK: - Validation Helpers
 
+/// Validates that a `Double` value falls within the specified range.
 @inlinable
 func validateRange(_ value: Double, in range: ClosedRange<Double>, parameterName: String) throws {
 	guard range.contains(value) else {
@@ -77,6 +78,7 @@ func validateRange(_ value: Double, in range: ClosedRange<Double>, parameterName
 	}
 }
 
+/// Validates that a `TimeInterval` value falls within the specified range.
 @inlinable
 func validateTimeoutRange(_ value: TimeInterval, in range: ClosedRange<TimeInterval>, parameterName: String) throws {
 	guard range.contains(value) else {
@@ -84,6 +86,7 @@ func validateTimeoutRange(_ value: TimeInterval, in range: ClosedRange<TimeInter
 	}
 }
 
+/// Validates that an `Int` value is greater than zero.
 @inlinable
 func validatePositive(_ value: Int, parameterName: String) throws {
 	guard value > 0 else {
@@ -91,6 +94,7 @@ func validatePositive(_ value: Int, parameterName: String) throws {
 	}
 }
 
+/// Validates that a `String` value is not empty.
 @inlinable
 func validateNotEmpty(_ value: String, parameterName: String) throws {
 	guard !value.isEmpty else {
@@ -168,6 +172,7 @@ public struct InputMessage: Sendable, Encodable {
 		case type, role, content
 	}
 
+	/// Creates a new InputMessage with the given role and content.
 	public init(role: Role, content: InputContent) {
 		self.role = role
 		self.content = content
@@ -192,6 +197,7 @@ public struct FunctionCallOutputItem: Sendable, Encodable {
 		case output
 	}
 
+	/// Creates a new FunctionCallOutputItem with the given call ID and output string.
 	public init(callId: String, output: String) {
 		self.callId = callId
 		self.output = output
@@ -213,6 +219,7 @@ public struct ItemReference: Sendable, Encodable {
 		case type, id
 	}
 
+	/// Creates a new ItemReference with the given output item ID.
 	public init(id: String) {
 		self.id = id
 	}
@@ -252,6 +259,7 @@ public struct Annotation: Sendable {
 	public let url: String?
 	public let title: String?
 
+	/// Creates a new Annotation.
 	public init(type: String, startIndex: Int? = nil, endIndex: Int? = nil, url: String? = nil, title: String? = nil) {
 		self.type = type
 		self.startIndex = startIndex
@@ -275,6 +283,7 @@ public struct OutputTextContent: Sendable, Decodable {
 	public let text: String
 	public let annotations: [Annotation]?
 
+	/// Creates a new OutputTextContent with text and optional annotations.
 	public init(text: String, annotations: [Annotation]? = nil) {
 		self.text = text
 		self.annotations = annotations
@@ -318,6 +327,7 @@ public struct OutputMessage: Sendable, Decodable {
 	public let content: [OutputContent]
 	public let status: String?
 
+	/// Creates a new OutputMessage.
 	public init(id: String, role: Role, content: [OutputContent], status: String? = nil) {
 		self.id = id
 		self.role = role
@@ -340,6 +350,7 @@ public struct FunctionCallItem: Sendable, Decodable {
 		case name, arguments, status
 	}
 
+	/// Creates a new FunctionCallItem.
 	public init(id: String, callId: String, name: String, arguments: String, status: String? = nil) {
 		self.id = id
 		self.callId = callId
@@ -366,6 +377,7 @@ public struct ReasoningSummary: Sendable, Decodable {
 	public let type: String
 	public let text: String
 
+	/// Creates a new ReasoningSummary.
 	public init(type: String, text: String) {
 		self.type = type
 		self.text = text
@@ -383,6 +395,7 @@ public struct ReasoningItem: Sendable, Decodable {
 		case encryptedContent = "encrypted_content"
 	}
 
+	/// Creates a new ReasoningItem.
 	public init(id: String, summary: [ReasoningSummary]? = nil, encryptedContent: String? = nil) {
 		self.id = id
 		self.summary = summary
@@ -458,6 +471,8 @@ public func FunctionOutput(callId: String, output: String) -> InputItem {
 public struct Temperature: ResponseConfigParameter {
 	public let value: Double
 
+	/// Creates a temperature parameter. Validates range 0.0–2.0.
+	/// - Throws: `LLMError.invalidValue` if out of range.
 	public init(_ value: Double) throws {
 		try validateRange(value, in: 0.0...2.0, parameterName: "Temperature")
 		self.value = value
@@ -472,6 +487,8 @@ public struct Temperature: ResponseConfigParameter {
 public struct TopP: ResponseConfigParameter {
 	public let value: Double
 
+	/// Creates a top-p parameter. Validates range 0.0–1.0.
+	/// - Throws: `LLMError.invalidValue` if out of range.
 	public init(_ value: Double) throws {
 		try validateRange(value, in: 0.0...1.0, parameterName: "TopP")
 		self.value = value
@@ -486,6 +503,8 @@ public struct TopP: ResponseConfigParameter {
 public struct FrequencyPenalty: ResponseConfigParameter {
 	public let value: Double
 
+	/// Creates a frequency penalty parameter. Validates range -2.0–2.0.
+	/// - Throws: `LLMError.invalidValue` if out of range.
 	public init(_ value: Double) throws {
 		try validateRange(value, in: -2.0...2.0, parameterName: "FrequencyPenalty")
 		self.value = value
@@ -500,6 +519,8 @@ public struct FrequencyPenalty: ResponseConfigParameter {
 public struct PresencePenalty: ResponseConfigParameter {
 	public let value: Double
 
+	/// Creates a presence penalty parameter. Validates range -2.0–2.0.
+	/// - Throws: `LLMError.invalidValue` if out of range.
 	public init(_ value: Double) throws {
 		try validateRange(value, in: -2.0...2.0, parameterName: "PresencePenalty")
 		self.value = value
@@ -514,6 +535,8 @@ public struct PresencePenalty: ResponseConfigParameter {
 public struct MaxOutputTokens: ResponseConfigParameter {
 	public let value: Int
 
+	/// Creates a max output tokens parameter. Validates value > 0.
+	/// - Throws: `LLMError.invalidValue` if not positive.
 	public init(_ value: Int) throws {
 		try validatePositive(value, parameterName: "MaxOutputTokens")
 		self.value = value
@@ -528,6 +551,8 @@ public struct MaxOutputTokens: ResponseConfigParameter {
 public struct Instructions: ResponseConfigParameter {
 	public let value: String
 
+	/// Creates an instructions parameter. Validates non-empty.
+	/// - Throws: `LLMError.invalidValue` if empty.
 	public init(_ value: String) throws {
 		try validateNotEmpty(value, parameterName: "Instructions")
 		self.value = value
@@ -542,6 +567,8 @@ public struct Instructions: ResponseConfigParameter {
 public struct PreviousResponseId: ResponseConfigParameter {
 	public let value: String
 
+	/// Creates a previous response ID parameter. Validates non-empty.
+	/// - Throws: `LLMError.invalidValue` if empty.
 	public init(_ value: String) throws {
 		try validateNotEmpty(value, parameterName: "PreviousResponseId")
 		self.value = value
@@ -556,6 +583,7 @@ public struct PreviousResponseId: ResponseConfigParameter {
 public struct Reasoning: ResponseConfigParameter {
 	public let config: ReasoningConfig
 
+	/// Creates a reasoning configuration with the given effort level and optional summary.
 	public init(effort: ReasoningEffort, summary: Truncation? = nil) {
 		self.config = ReasoningConfig(effort: effort, summary: summary)
 	}
@@ -569,6 +597,7 @@ public struct Reasoning: ResponseConfigParameter {
 public struct TruncationParam: ResponseConfigParameter {
 	public let value: Truncation
 
+	/// Creates a truncation parameter with the given strategy.
 	public init(_ value: Truncation) {
 		self.value = value
 	}
@@ -582,6 +611,7 @@ public struct TruncationParam: ResponseConfigParameter {
 public struct ServiceTierParam: ResponseConfigParameter {
 	public let value: ServiceTier
 
+	/// Creates a service tier parameter with the given tier.
 	public init(_ value: ServiceTier) {
 		self.value = value
 	}
@@ -595,6 +625,7 @@ public struct ServiceTierParam: ResponseConfigParameter {
 public struct Metadata: ResponseConfigParameter {
 	public let value: [String: String]
 
+	/// Creates a metadata parameter with the given key-value pairs.
 	public init(_ value: [String: String]) {
 		self.value = value
 	}
@@ -608,6 +639,7 @@ public struct Metadata: ResponseConfigParameter {
 public struct ParallelToolCalls: ResponseConfigParameter {
 	public let value: Bool
 
+	/// Creates a parallel tool calls parameter.
 	public init(_ value: Bool) {
 		self.value = value
 	}
@@ -621,6 +653,8 @@ public struct ParallelToolCalls: ResponseConfigParameter {
 public struct RequestTimeout: ResponseConfigParameter {
 	public let value: TimeInterval
 
+	/// Creates a request timeout parameter. Validates range 10–900 seconds.
+	/// - Throws: `LLMError.invalidValue` if out of range.
 	public init(_ value: TimeInterval) throws {
 		try validateTimeoutRange(value, in: 10...900, parameterName: "Request timeout")
 		self.value = value
@@ -635,6 +669,8 @@ public struct RequestTimeout: ResponseConfigParameter {
 public struct ResourceTimeout: ResponseConfigParameter {
 	public let value: TimeInterval
 
+	/// Creates a resource timeout parameter. Validates range 30–3600 seconds.
+	/// - Throws: `LLMError.invalidValue` if out of range.
 	public init(_ value: TimeInterval) throws {
 		try validateTimeoutRange(value, in: 30...3600, parameterName: "Resource timeout")
 		self.value = value
@@ -723,6 +759,7 @@ public struct FunctionToolParam: Sendable, Encodable {
 		case type, name, description, parameters, strict
 	}
 
+	/// Creates a new function tool definition with the given name, description, and JSON Schema parameters.
 	public init(
 		name: String,
 		description: String,
@@ -827,7 +864,7 @@ public struct ResponseConfigBuilder {
 	}
 }
 
-/// Result builder for composing tool arrays declaratively.
+/// Result builder for composing ``FunctionToolParam`` arrays declaratively.
 @resultBuilder
 public struct ToolsBuilder {
 	public static func buildBlock(_ components: FunctionToolParam...) -> [FunctionToolParam] {
@@ -993,6 +1030,7 @@ public struct ResponseObject: Sendable, Decodable {
 		case metadata
 	}
 
+	/// Creates a new ResponseObject.
 	public init(
 		id: String,
 		object: String = "response",
@@ -1029,6 +1067,7 @@ public struct ResponseObject: Sendable, Decodable {
 			case totalTokens = "total_tokens"
 		}
 
+		/// Creates a new Usage with the given token counts.
 		public init(inputTokens: Int, outputTokens: Int, totalTokens: Int) {
 			self.inputTokens = inputTokens
 			self.outputTokens = outputTokens
@@ -1041,6 +1080,7 @@ public struct ResponseObject: Sendable, Decodable {
 		public let code: String
 		public let message: String
 
+		/// Creates a new ErrorInfo with the given error code and message.
 		public init(code: String, message: String) {
 			self.code = code
 			self.message = message
