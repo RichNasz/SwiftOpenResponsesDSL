@@ -19,7 +19,7 @@ For tool calling and agent capabilities, see [ToolCalling.md](ToolCalling.md) an
 
 ## Requirements
 - **Swift Version**: 6.2+ (enable for trailing commas, `nonisolated`, improved type inference).
-- **Dependencies**: SwiftChatCompletionsMacros (for JSONSchema and tool macros).
+- **Dependencies**: SwiftLLMToolMacros (for JSONSchema and tool macros).
 - **API Compatibility**: Align with Open Responses API JSON format for requests and responses (camelCase internally, snake_case in JSON via `CodingKeys`).
 - **Testing**: Support Swift Testing for async validation (e.g., `#expect` with concurrency traits).
 - **URL Handling**: Treat `baseURL` as the complete endpoint URL provided by the user, without modification.

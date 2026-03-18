@@ -31,7 +31,7 @@ Uses `previous_response_id` instead of re-sending history:
 4. Repeat until no more function calls
 
 ### Dependencies
-- `SwiftChatCompletionsMacros` — JSONSchema types and `@ChatCompletionsTool` macro support
+- `SwiftLLMToolMacros` — JSONSchema types and `@LLMTool` macro support
 
 ### Build & Test
 ```bash

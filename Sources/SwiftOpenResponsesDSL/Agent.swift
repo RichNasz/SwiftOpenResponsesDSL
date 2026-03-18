@@ -7,7 +7,7 @@
 //
 
 import Foundation
-import SwiftChatCompletionsMacros
+import SwiftLLMToolMacros
 
 // MARK: - Agent
 
@@ -31,10 +31,10 @@ public struct AgentTool: Sendable {
 		self.handler = handler
 	}
 
-	/// Creates an AgentTool from a `ChatCompletionsTool` instance.
-	public init<T: ChatCompletionsTool>(_ instance: T) {
+	/// Creates an AgentTool from a `LLMTool` instance.
+	public init<T: LLMTool>(_ instance: T, strict: Bool? = nil) {
 		let definition = T.toolDefinition
-		self.init(tool: FunctionToolParam(from: definition)) { argumentsJSON in
+		self.init(tool: FunctionToolParam(from: definition, strict: strict)) { argumentsJSON in
 			guard let data = argumentsJSON.data(using: .utf8) else {
 				throw LLMError.decodingFailed("Failed to convert arguments to data")
 			}

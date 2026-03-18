@@ -7,7 +7,7 @@
 //
 
 import Foundation
-import SwiftChatCompletionsMacros
+import SwiftLLMToolMacros
 
 // MARK: - Core Enums
 
@@ -774,12 +774,12 @@ public struct FunctionToolParam: Sendable, Encodable {
 	}
 
 	/// Creates a FunctionToolParam from a macros ToolDefinition.
-	public init(from definition: ToolDefinition) {
+	public init(from definition: ToolDefinition, strict: Bool? = nil) {
 		self.type = "function"
 		self.name = definition.name
 		self.description = definition.description
 		self.parameters = definition.parameters
-		self.strict = nil
+		self.strict = strict
 	}
 
 	public func encode(to encoder: Encoder) throws {

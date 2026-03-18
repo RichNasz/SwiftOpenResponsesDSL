@@ -19,7 +19,7 @@ FunctionOutput(callId: "call_1", output: "{\"temp\": 72}")  // InputItem.functio
 
 These work anywhere `InputItem` works, including `@InputBuilder` and `@SessionBuilder` blocks.
 
-### Macro-Powered Tools (via SwiftChatCompletionsMacros)
+### Macro-Powered Tools (via SwiftLLMToolMacros)
 
 Using the companion macros package for zero-boilerplate tool definitions:
 

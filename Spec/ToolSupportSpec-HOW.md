@@ -15,7 +15,7 @@ Sources/SwiftOpenResponsesDSL/
 
 ## Key Implementation Decisions
 
-1. **JSONSchema via macros package**: Use `JSONSchemaValue` from `SwiftChatCompletionsMacros` via typealias, same as Chat Completions project.
+1. **JSONSchema via macros package**: Use `JSONSchemaValue` from `SwiftLLMToolMacros` via typealias, same as Chat Completions project.
 
 2. **ToolSession is a struct**: Stateless — takes inputs, produces outputs. `LLMClient` (actor) handles thread safety.
 
