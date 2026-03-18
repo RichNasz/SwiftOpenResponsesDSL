@@ -144,4 +144,36 @@ catch LLMError.unknownTool(let name) { ... }
 catch LLMError.toolExecutionFailed(let name, let message) { ... }
 ```
 
+### Token Usage
+
+The Open Responses API returns a `usage` object on every response containing three fields: `input_tokens`, `output_tokens`, and `total_tokens`. These are decoded into `ResponseObject.Usage`:
+
+```swift
+struct ResponseObject.Usage: Sendable, Decodable {
+    let inputTokens: Int    // JSON: "input_tokens"
+    let outputTokens: Int   // JSON: "output_tokens"
+    let totalTokens: Int    // JSON: "total_tokens"
+}
+```
+
+**After `client.send()`**:
+```swift
+let response = try await client.send(request)
+if let usage = response.usage {
+    print("Input: \(usage.inputTokens), Output: \(usage.outputTokens), Total: \(usage.totalTokens)")
+}
+```
+
+**After `ToolSession.run()`**:
+```swift
+let result = try await session.run("What is the weather in Paris?")
+if let usage = result.response.usage {
+    print("Final response used \(usage.totalTokens) tokens")
+}
+```
+
+`ToolSessionResult.response` holds the final response only. To track cumulative usage across all tool-calling iterations, accumulate token counts in each handler or use `client.send()` directly with manual loop management.
+
+**`Agent` limitation**: `Agent.run()` and `Agent.send()` return `String` only — usage data is not surfaced. Use `ToolSession` or `client.send()` directly when token tracking is required.
+
 For implementation details, see [ToolSupportSpec-HOW.md](ToolSupportSpec-HOW.md).

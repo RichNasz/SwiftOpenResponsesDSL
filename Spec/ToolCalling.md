@@ -56,6 +56,8 @@ Key difference from Chat Completions: The tool loop uses `previous_response_id` 
 
 ### ToolSessionResult (struct)
 - **Fields**: `response: ResponseObject`, `iterations: Int`, `log: [ToolCallLogEntry]`
+- **Token usage**: `result.response.usage` surfaces token counts (`inputTokens`, `outputTokens`, `totalTokens`) for the final response in the tool loop. Callers interested in per-iteration totals must sum across intermediate responses manually — `ToolSessionResult` does not accumulate usage across iterations.
+- **Agent limitation**: `Agent.run()` and `Agent.send()` return `String` only — usage data is not surfaced. Callers requiring token counts should use `ToolSession` or `client.send()` directly.
 
 ### ToolCallLogEntry (struct)
 - **Fields**: `name: String`, `arguments: String`, `result: String`, `duration: Duration`

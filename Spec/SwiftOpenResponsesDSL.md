@@ -327,10 +327,13 @@ Each implementing `ResponseConfigParameter`:
       let previousResponseId: String?
       let metadata: [String: String]?
 
+      /// Token usage as defined by the Open Responses specification.
+      /// `input_tokens`, `output_tokens`, and `total_tokens` are the three
+      /// fields returned in the `usage` object on every response.
       struct Usage: Sendable, Decodable {
-          let inputTokens: Int
-          let outputTokens: Int
-          let totalTokens: Int
+          let inputTokens: Int    // JSON: "input_tokens"
+          let outputTokens: Int   // JSON: "output_tokens"
+          let totalTokens: Int    // JSON: "total_tokens"
       }
 
       struct ErrorInfo: Sendable, Decodable {
@@ -426,6 +429,20 @@ actor LLMClient {
            PreviousResponseId(response1.id)
        } text: "Tell me more about its type system."
    )
+   ```
+
+5. **Token Usage**:
+   ```swift
+   let response = try await client.send(
+       try ResponseRequest(model: "gpt-4o") text: "Explain optionals."
+   )
+   if let usage = response.usage {
+       print("Input tokens:  \(usage.inputTokens)")
+       print("Output tokens: \(usage.outputTokens)")
+       print("Total tokens:  \(usage.totalTokens)")
+   }
+   // Convenience property (returns 0 if usage is nil):
+   print("Total: \(response.totalTokens)")
    ```
 
 ---
