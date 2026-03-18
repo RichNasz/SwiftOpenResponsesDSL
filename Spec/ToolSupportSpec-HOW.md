@@ -102,7 +102,7 @@ Parser algorithm:
 - `definition.parameters` -> `parameters` (via JSONSchema typealias)
 - `type` defaults to `"function"`
 
-`AgentTool.init<T: ChatCompletionsTool>(_ instance: T)`:
+`AgentTool.init<T: LLMTool>(_ instance: T)`:
 1. Gets `T.toolDefinition`
 2. Creates a `FunctionToolParam` from the definition
 3. Creates a handler closure that decodes arguments and calls `instance.call(arguments:)`

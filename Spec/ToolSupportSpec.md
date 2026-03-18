@@ -24,13 +24,15 @@ These work anywhere `InputItem` works, including `@InputBuilder` and `@SessionBu
 Using the companion macros package for zero-boilerplate tool definitions:
 
 ```swift
-@ChatCompletionsTool
+import SwiftLLMToolMacros
+
+@LLMTool
 struct GetCurrentWeather {
-    @ChatCompletionsToolArguments
+    @LLMToolArguments
     struct Arguments {
-        @ChatCompletionsToolGuide(description: "City and state, e.g. Alpharetta, GA")
+        @LLMToolGuide(description: "City and state, e.g. Alpharetta, GA")
         var location: String
-        @ChatCompletionsToolGuide(description: "Unit", .anyOf(["celsius", "fahrenheit"]))
+        @LLMToolGuide(description: "Unit", .anyOf(["celsius", "fahrenheit"]))
         var unit: String = "celsius"
     }
 
@@ -41,7 +43,7 @@ struct GetCurrentWeather {
 ```
 
 Bridged to core DSL types:
-- `AgentTool.init<T: ChatCompletionsTool>(_ instance: T)`
+- `AgentTool.init<T: LLMTool>(_ instance: T)`
 - `FunctionToolParam.init(from: ToolDefinition)`
 
 ### Manual Tool Definition (JSONSchema)

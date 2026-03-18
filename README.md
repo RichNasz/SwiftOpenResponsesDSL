@@ -143,6 +143,39 @@ let result = try await session.run(
 print(result.response.firstOutputText ?? "")
 ```
 
+### Macro-Powered Tools
+
+Use `SwiftLLMToolMacros` to define tools with zero boilerplate. The `@LLMTool` macro synthesizes JSON schema and decoding automatically:
+
+```swift
+import SwiftOpenResponsesDSL
+import SwiftLLMToolMacros
+
+@LLMTool
+struct GetCurrentWeather {
+    @LLMToolArguments
+    struct Arguments {
+        @LLMToolGuide(description: "City and state, e.g. Alpharetta, GA")
+        var location: String
+        @LLMToolGuide(description: "Temperature unit", .anyOf(["celsius", "fahrenheit"]))
+        var unit: String = "celsius"
+    }
+
+    func call(arguments: Arguments) async throws -> ToolOutput {
+        let temp = unit == "celsius" ? "22°C" : "72°F"
+        return ToolOutput(content: "{\"temperature\": \"\(temp)\"}")
+    }
+}
+
+let agent = try Agent(client: client, model: "gpt-4o") {
+    System("You are a weather assistant.")
+    AgentTool(GetCurrentWeather())
+}
+
+let reply = try await agent.run("What's the weather in Paris?")
+print(reply)
+```
+
 ## Requirements
 
 - Swift 6.2+
