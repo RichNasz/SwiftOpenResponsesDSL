@@ -1178,6 +1178,8 @@ public enum StreamEvent: Sendable {
 	case functionCallArgumentsDelta(delta: String, callId: String, index: Int)
 	case functionCallArgumentsDone(arguments: String, callId: String, index: Int)
 	case responseCompleted(ResponseObject)
+	case reasoningSummaryPartAdded(part: ReasoningSummary, index: Int, summaryIndex: Int)
+	case reasoningSummaryPartDone(part: ReasoningSummary, index: Int, summaryIndex: Int)
 	case responseFailed(ResponseObject)
 	case error(String)
 }
@@ -1376,6 +1378,14 @@ public actor LLMClient {
 			if let str = String(data: data, encoding: .utf8) {
 				return .error(str)
 			}
+		case "response.reasoning_summary_part.added":
+			if let wrapper = try? decoder.decode(ReasoningSummaryPartEventWrapper.self, from: data) {
+				return .reasoningSummaryPartAdded(part: wrapper.part, index: wrapper.outputIndex, summaryIndex: wrapper.summaryIndex)
+			}
+		case "response.reasoning_summary_part.done":
+			if let wrapper = try? decoder.decode(ReasoningSummaryPartEventWrapper.self, from: data) {
+				return .reasoningSummaryPartDone(part: wrapper.part, index: wrapper.outputIndex, summaryIndex: wrapper.summaryIndex)
+			}
 		default:
 			break
 		}
@@ -1418,6 +1428,18 @@ struct TextDeltaEventWrapper: Decodable {
 		case delta
 		case outputIndex = "output_index"
 		case contentIndex = "content_index"
+	}
+}
+
+struct ReasoningSummaryPartEventWrapper: Decodable {
+	let part: ReasoningSummary
+	let outputIndex: Int
+	let summaryIndex: Int
+
+	private enum CodingKeys: String, CodingKey {
+		case part
+		case outputIndex = "output_index"
+		case summaryIndex = "summary_index"
 	}
 }
 
