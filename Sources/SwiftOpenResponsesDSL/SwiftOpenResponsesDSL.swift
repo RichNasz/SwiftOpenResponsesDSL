@@ -1136,6 +1136,8 @@ public enum StreamEvent: Sendable {
 	case contentPartDelta(delta: String, index: Int, contentIndex: Int)
 	case contentPartDone(index: Int, contentIndex: Int)
 	case outputItemDone(OutputItem, index: Int)
+	case functionCallArgumentsDelta(delta: String, callId: String, index: Int)
+	case functionCallArgumentsDone(arguments: String, callId: String, index: Int)
 	case responseCompleted(ResponseObject)
 	case responseFailed(ResponseObject)
 	case error(String)
@@ -1313,6 +1315,16 @@ public actor LLMClient {
 			if let wrapper = try? decoder.decode(OutputItemEventWrapper.self, from: data) {
 				return .outputItemDone(wrapper.item, index: wrapper.outputIndex)
 			}
+		case "response.function_call_arguments.delta":
+			if let wrapper = try? decoder.decode(FunctionCallArgumentsEventWrapper.self, from: data),
+			   let delta = wrapper.delta {
+				return .functionCallArgumentsDelta(delta: delta, callId: wrapper.callId, index: wrapper.outputIndex)
+			}
+		case "response.function_call_arguments.done":
+			if let wrapper = try? decoder.decode(FunctionCallArgumentsEventWrapper.self, from: data),
+			   let arguments = wrapper.arguments {
+				return .functionCallArgumentsDone(arguments: arguments, callId: wrapper.callId, index: wrapper.outputIndex)
+			}
 		case "response.completed":
 			if let obj = try? decoder.decode(ResponseObject.self, from: data) {
 				return .responseCompleted(obj)
@@ -1363,5 +1375,18 @@ struct TextDeltaEventWrapper: Decodable {
 		case delta
 		case outputIndex = "output_index"
 		case contentIndex = "content_index"
+	}
+}
+
+struct FunctionCallArgumentsEventWrapper: Decodable {
+	let delta: String?
+	let arguments: String?
+	let callId: String
+	let outputIndex: Int
+
+	private enum CodingKeys: String, CodingKey {
+		case delta, arguments
+		case callId = "call_id"
+		case outputIndex = "output_index"
 	}
 }

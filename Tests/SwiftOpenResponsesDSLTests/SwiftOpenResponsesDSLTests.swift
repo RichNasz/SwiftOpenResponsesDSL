@@ -636,3 +636,90 @@ import Testing
 	#expect(response.requiresToolExecution == false)
 	#expect(response.totalTokens == 5)
 }
+
+// MARK: - StreamEvent New Case Tests
+
+@Test func testStreamEventFunctionCallDeltaCase() {
+	let event = StreamEvent.functionCallArgumentsDelta(delta: "{\"loc", callId: "call_99", index: 0)
+
+	if case .functionCallArgumentsDelta(let delta, let callId, let index) = event {
+		#expect(delta == "{\"loc")
+		#expect(callId == "call_99")
+		#expect(index == 0)
+	} else {
+		Issue.record("Expected functionCallArgumentsDelta case")
+	}
+}
+
+@Test func testStreamEventFunctionCallDoneCase() {
+	let event = StreamEvent.functionCallArgumentsDone(arguments: "{\"location\":\"Paris\"}", callId: "call_42", index: 1)
+
+	if case .functionCallArgumentsDone(let arguments, let callId, let index) = event {
+		#expect(arguments == "{\"location\":\"Paris\"}")
+		#expect(callId == "call_42")
+		#expect(index == 1)
+	} else {
+		Issue.record("Expected functionCallArgumentsDone case")
+	}
+}
+
+// MARK: - ToolSessionEvent Tests
+
+@Test func testToolSessionEventIterationStarted() {
+	let event = ToolSessionEvent.iterationStarted(2)
+
+	if case .iterationStarted(let iteration) = event {
+		#expect(iteration == 2)
+	} else {
+		Issue.record("Expected iterationStarted case")
+	}
+}
+
+@Test func testToolSessionEventToolCallStarted() {
+	let event = ToolSessionEvent.toolCallStarted(callId: "call_7", name: "get_weather", arguments: "{\"city\":\"London\"}")
+
+	if case .toolCallStarted(let callId, let name, let arguments) = event {
+		#expect(callId == "call_7")
+		#expect(name == "get_weather")
+		#expect(arguments == "{\"city\":\"London\"}")
+	} else {
+		Issue.record("Expected toolCallStarted case")
+	}
+}
+
+@Test func testToolSessionEventToolCallCompleted() {
+	let duration = Duration.milliseconds(250)
+	let event = ToolSessionEvent.toolCallCompleted(callId: "call_8", name: "get_weather", output: "Sunny, 22°C", duration: duration)
+
+	if case .toolCallCompleted(let callId, let name, let output, let d) = event {
+		#expect(callId == "call_8")
+		#expect(name == "get_weather")
+		#expect(output == "Sunny, 22°C")
+		#expect(d == duration)
+	} else {
+		Issue.record("Expected toolCallCompleted case")
+	}
+}
+
+@Test func testToolSessionEventLLMWrapper() throws {
+	let jsonString = """
+	{
+		"id": "resp_stream",
+		"object": "response",
+		"created_at": 1700000000,
+		"model": "gpt-4o",
+		"output": [],
+		"status": "completed"
+	}
+	"""
+	let response = try JSONDecoder().decode(ResponseObject.self, from: Data(jsonString.utf8))
+	let innerEvent = StreamEvent.responseCompleted(response)
+	let event = ToolSessionEvent.llm(innerEvent)
+
+	if case .llm(let streamEvent) = event,
+	   case .responseCompleted(let r) = streamEvent {
+		#expect(r.id == "resp_stream")
+	} else {
+		Issue.record("Expected llm(.responseCompleted) case")
+	}
+}

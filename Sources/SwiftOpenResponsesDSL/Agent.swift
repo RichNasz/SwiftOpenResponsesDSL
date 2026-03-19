@@ -268,6 +268,108 @@ public actor Agent {
 		try await send(message)
 	}
 
+	/// Streams a user message, emitting real-time LLM and tool execution events.
+	public func stream(_ message: String) -> AsyncThrowingStream<ToolSessionEvent, Error> {
+		// Capture actor state synchronously before leaving the actor executor
+		_transcript.append(.userMessage(message))
+		let capturedModel = model
+		let capturedTools = tools
+		let capturedToolChoice = toolChoice
+		let capturedToolHandlers = toolHandlers
+		let capturedConfigParams = configParams
+		let capturedInstructions = instructions
+		let capturedLastResponseId = _lastResponseId
+		let capturedMaxToolIterations = maxToolIterations
+		let capturedClient = client
+		let input: [InputItem] = [User(message)]
+
+		return AsyncThrowingStream { continuation in
+			let task = Task {
+				do {
+					if capturedTools.isEmpty {
+						// No tools — stream simple completion
+						var request = try ResponseRequest(model: capturedModel, stream: true, input: input)
+						if let instructions = capturedInstructions {
+							request.instructions = instructions
+						}
+						if let lastId = capturedLastResponseId {
+							request.previousResponseId = lastId
+						}
+						for param in capturedConfigParams {
+							param.apply(to: &request)
+						}
+
+						var textAccumulator = ""
+						for try await event in capturedClient.stream(request) {
+							continuation.yield(.llm(event))
+							switch event {
+							case .contentPartDelta(let delta, _, _):
+								textAccumulator += delta
+							case .responseCompleted(let response):
+								self.updateLastResponseId(response.id)
+							default:
+								break
+							}
+						}
+						self.appendTranscriptEntry(.assistantMessage(textAccumulator))
+						continuation.finish()
+					} else {
+						// Use ToolSession for tool-calling loop
+						let session = ToolSession(
+							client: capturedClient,
+							tools: capturedTools,
+							toolChoice: capturedToolChoice,
+							maxIterations: capturedMaxToolIterations,
+							handlers: capturedToolHandlers
+						)
+
+						var allConfigParams: [ResponseConfigParameter] = capturedConfigParams
+						if let instructions = capturedInstructions {
+							allConfigParams.append(try Instructions(instructions))
+						}
+						if let lastId = capturedLastResponseId {
+							allConfigParams.append(try PreviousResponseId(lastId))
+						}
+
+						var textAccumulator = ""
+						for try await event in session.stream(model: capturedModel, input: input, configParams: allConfigParams) {
+							continuation.yield(event)
+							switch event {
+							case .llm(.contentPartDelta(let delta, _, _)):
+								textAccumulator += delta
+							case .llm(.responseCompleted(let response)):
+								self.updateLastResponseId(response.id)
+							case .toolCallStarted(_, let name, let arguments):
+								self.appendTranscriptEntry(.toolCall(name: name, arguments: arguments))
+							case .toolCallCompleted(_, let name, let output, let duration):
+								self.appendTranscriptEntry(.toolResult(name: name, result: output, duration: duration))
+							default:
+								break
+							}
+						}
+						self.appendTranscriptEntry(.assistantMessage(textAccumulator))
+						continuation.finish()
+					}
+				} catch {
+					self.appendTranscriptEntry(.error(error.localizedDescription))
+					continuation.finish(throwing: error)
+				}
+			}
+
+			continuation.onTermination = { _ in
+				task.cancel()
+			}
+		}
+	}
+
+	private func updateLastResponseId(_ id: String) {
+		_lastResponseId = id
+	}
+
+	private func appendTranscriptEntry(_ entry: TranscriptEntry) {
+		_transcript.append(entry)
+	}
+
 	/// Resets the agent's conversation state and transcript.
 	public func reset() {
 		_lastResponseId = nil

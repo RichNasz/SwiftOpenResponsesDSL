@@ -50,6 +50,20 @@ public struct SessionBuilder {
 	}
 }
 
+// MARK: - Tool Session Event
+
+/// Events emitted during a streaming ToolSession run.
+public enum ToolSessionEvent: Sendable {
+	/// Emitted before each LLM request (1-indexed).
+	case iterationStarted(Int)
+	/// A forwarded event from the LLM's SSE stream.
+	case llm(StreamEvent)
+	/// Emitted just before a tool handler is invoked.
+	case toolCallStarted(callId: String, name: String, arguments: String)
+	/// Emitted after a tool handler returns.
+	case toolCallCompleted(callId: String, name: String, output: String, duration: Duration)
+}
+
 // MARK: - Tool Session
 
 /// Log entry for a single tool call execution within a ToolSession.
@@ -252,5 +266,131 @@ public struct ToolSession: Sendable {
 		}
 		let input = initialInput + [User(prompt)]
 		return try await run(model: model, input: input)
+	}
+
+	/// Streams the tool-calling loop, emitting real-time LLM and tool execution events.
+	public func stream(
+		model: String,
+		input: [InputItem],
+		configParams: [ResponseConfigParameter] = []
+	) -> AsyncThrowingStream<ToolSessionEvent, Error> {
+		AsyncThrowingStream { continuation in
+			let task = Task {
+				do {
+					var currentInput = input
+					var previousResponseId: String? = nil
+					var iteration = 0
+
+					while true {
+						continuation.yield(.iterationStarted(iteration + 1))
+
+						// Build request
+						var request = try ResponseRequest(model: model, stream: true, input: currentInput)
+						if let prevId = previousResponseId {
+							request.previousResponseId = prevId
+						}
+						request.tools = tools
+						request.toolChoice = toolChoice
+						for param in configParams {
+							param.apply(to: &request)
+						}
+
+						// Stream the LLM response, collecting function calls
+						var functionCalls: [FunctionCallItem] = []
+						var completedResponseId: String? = nil
+
+						for try await event in client.stream(request) {
+							continuation.yield(.llm(event))
+							switch event {
+							case .outputItemDone(let item, _):
+								if case .functionCall(let call) = item {
+									functionCalls.append(call)
+								}
+							case .responseCompleted(let response):
+								completedResponseId = response.id
+							default:
+								break
+							}
+						}
+
+						// No function calls — final response, done
+						if functionCalls.isEmpty {
+							continuation.finish()
+							return
+						}
+
+						guard iteration < maxIterations else {
+							throw LLMError.maxIterationsExceeded(maxIterations)
+						}
+
+						// Execute tool handlers in parallel, emitting events as they complete
+						let results = try await withThrowingTaskGroup(
+							of: (Int, String, String, Duration).self
+						) { group in
+							for (index, call) in functionCalls.enumerated() {
+								guard let handler = handlers[call.name] else {
+									throw LLMError.unknownTool(call.name)
+								}
+								let callId = call.callId
+								let name = call.name
+								let arguments = call.arguments
+								continuation.yield(.toolCallStarted(callId: callId, name: name, arguments: arguments))
+								group.addTask {
+									let clock = ContinuousClock()
+									let start = clock.now
+									do {
+										let result = try await handler(arguments)
+										let duration = clock.now - start
+										continuation.yield(.toolCallCompleted(callId: callId, name: name, output: result, duration: duration))
+										return (index, callId, result, duration)
+									} catch {
+										throw LLMError.toolExecutionFailed(
+											toolName: name,
+											message: "[\(type(of: error))] \(error.localizedDescription)"
+										)
+									}
+								}
+							}
+
+							var collected: [(Int, String, String, Duration)] = []
+							for try await result in group {
+								collected.append(result)
+							}
+							return collected.sorted { $0.0 < $1.0 }
+						}
+
+						// Build function call output items for next iteration
+						var outputItems: [InputItem] = []
+						for (_, callId, result, _) in results {
+							outputItems.append(
+								.functionCallOutput(FunctionCallOutputItem(
+									callId: callId,
+									output: result
+								))
+							)
+						}
+
+						previousResponseId = completedResponseId
+						currentInput = outputItems
+						iteration += 1
+					}
+				} catch {
+					continuation.finish(throwing: error)
+				}
+			}
+
+			continuation.onTermination = { _ in
+				task.cancel()
+			}
+		}
+	}
+
+	/// Streams the tool-calling loop with a user prompt using the declarative configuration.
+	public func stream(_ prompt: String) -> AsyncThrowingStream<ToolSessionEvent, Error> {
+		guard let model else {
+			preconditionFailure("stream(_:) requires ToolSession to be created with the declarative init(client:model:configure:) initializer")
+		}
+		let input = initialInput + [User(prompt)]
+		return stream(model: model, input: input)
 	}
 }

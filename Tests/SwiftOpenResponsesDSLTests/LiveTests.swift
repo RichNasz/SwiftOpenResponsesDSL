@@ -159,6 +159,145 @@ struct LiveTests {
 		#expect(fullText.isEmpty == false)
 	}
 
+	@Test func toolSessionStreamingBasic() async throws {
+		let session = ToolSession(
+			client: client,
+			tools: [],
+			maxIterations: 10,
+			handlers: [:]
+		)
+
+		var gotIterationStarted = false
+		var gotContentDelta = false
+		var gotToolCallStarted = false
+		var gotToolCallCompleted = false
+
+		for try await event in session.stream(
+			model: LiveTestConfig.model,
+			input: [User("Say hello in one word.")],
+			configParams: [try RequestTimeout(240)]
+		) {
+			switch event {
+			case .iterationStarted(let n) where n == 1:
+				gotIterationStarted = true
+			case .llm(.contentPartDelta):
+				gotContentDelta = true
+			case .toolCallStarted:
+				gotToolCallStarted = true
+			case .toolCallCompleted:
+				gotToolCallCompleted = true
+			default:
+				break
+			}
+		}
+
+		#expect(gotIterationStarted)
+		#expect(gotContentDelta)
+		#expect(gotToolCallStarted == false)
+		#expect(gotToolCallCompleted == false)
+	}
+
+	@Test func toolSessionStreamingWithTools() async throws {
+		let timeTool = FunctionToolParam(
+			name: "get_current_time",
+			description: "Returns the current time",
+			parameters: .object(properties: [:], required: [])
+		)
+		let timeHandler: ToolSession.ToolHandler = { _ in "12:00 PM" }
+
+		let session = ToolSession(
+			client: client,
+			tools: [timeTool],
+			maxIterations: 10,
+			handlers: ["get_current_time": timeHandler]
+		)
+
+		var events: [ToolSessionEvent] = []
+
+		for try await event in session.stream(
+			model: LiveTestConfig.model,
+			input: [User("What time is it right now? You MUST use the get_current_time tool.")],
+			configParams: [try RequestTimeout(240)]
+		) {
+			events.append(event)
+		}
+
+		// First event must be iterationStarted(1)
+		if case .iterationStarted(let n) = events.first {
+			#expect(n == 1)
+		} else {
+			Issue.record("Expected first event to be iterationStarted(1)")
+		}
+
+		let toolStarted = events.contains {
+			if case .toolCallStarted(_, let name, _) = $0 { return name == "get_current_time" }
+			return false
+		}
+		#expect(toolStarted)
+
+		let toolCompleted = events.contains {
+			if case .toolCallCompleted(_, let name, let output, _) = $0 {
+				return name == "get_current_time" && output == "12:00 PM"
+			}
+			return false
+		}
+		#expect(toolCompleted)
+
+		let secondIteration = events.contains {
+			if case .iterationStarted(let n) = $0 { return n == 2 }
+			return false
+		}
+		#expect(secondIteration)
+	}
+
+	@Test func agentStreaming() async throws {
+		let timeTool = FunctionToolParam(
+			name: "get_current_time",
+			description: "Returns the current time",
+			parameters: .object(properties: [:], required: [])
+		)
+		let timeHandler: ToolSession.ToolHandler = { _ in "12:00 PM" }
+
+		let agent = Agent(
+			client: client,
+			model: LiveTestConfig.model,
+			tools: [timeTool],
+			toolHandlers: ["get_current_time": timeHandler],
+			config: [try RequestTimeout(240)]
+		)
+
+		var gotToolCallStarted = false
+		var gotToolCallCompleted = false
+		var gotContentDelta = false
+
+		for try await event in await agent.stream("What time is it? Use the get_current_time tool.") {
+			switch event {
+			case .toolCallStarted:
+				gotToolCallStarted = true
+			case .toolCallCompleted:
+				gotToolCallCompleted = true
+			case .llm(.contentPartDelta):
+				gotContentDelta = true
+			default:
+				break
+			}
+		}
+
+		#expect(gotToolCallStarted)
+		#expect(gotToolCallCompleted)
+		#expect(gotContentDelta)
+
+		// lastResponseId is set only when the server emits response.completed;
+		// some local servers omit this event, so we don't assert non-nil here.
+		_ = await agent.lastResponseId
+
+		let transcript = await agent.transcript
+		let hasToolCall = transcript.contains { if case .toolCall = $0 { return true }; return false }
+		let hasToolResult = transcript.contains { if case .toolResult = $0 { return true }; return false }
+		#expect(hasToolCall)
+		#expect(hasToolResult)
+	}
+
 	@Test func maxOutputTokens() async throws {
 		let request = try ResponseRequest(
 			model: LiveTestConfig.model,
