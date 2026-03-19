@@ -37,6 +37,11 @@ public enum ReasoningEffort: String, Codable, Sendable {
 	case xhigh
 }
 
+/// Controls the verbosity of reasoning summaries.
+public enum ReasoningSummaryType: String, Codable, Sendable {
+	case concise, detailed, auto
+}
+
 /// Service tier selection for the request.
 public enum ServiceTier: String, Codable, Sendable {
 	case auto
@@ -407,21 +412,35 @@ public struct ReasoningSummary: Sendable, Decodable {
 	}
 }
 
+/// Raw reasoning trace content (type: "reasoning_text").
+public struct ReasoningContent: Sendable, Decodable {
+	public let type: String
+	public let text: String
+
+	/// Creates a new ReasoningContent.
+	public init(type: String, text: String) {
+		self.type = type
+		self.text = text
+	}
+}
+
 /// Reasoning output item.
 public struct ReasoningItem: Sendable, Decodable {
 	public let id: String
 	public let summary: [ReasoningSummary]?
+	public let content: [ReasoningContent]?
 	public let encryptedContent: String?
 
 	private enum CodingKeys: String, CodingKey {
-		case id, summary
+		case id, summary, content
 		case encryptedContent = "encrypted_content"
 	}
 
 	/// Creates a new ReasoningItem.
-	public init(id: String, summary: [ReasoningSummary]? = nil, encryptedContent: String? = nil) {
+	public init(id: String, summary: [ReasoningSummary]? = nil, content: [ReasoningContent]? = nil, encryptedContent: String? = nil) {
 		self.id = id
 		self.summary = summary
+		self.content = content
 		self.encryptedContent = encryptedContent
 	}
 }
@@ -430,6 +449,7 @@ public struct ReasoningItem: Sendable, Decodable {
 public enum OutputItem: Sendable {
 	case message(OutputMessage)
 	case functionCall(FunctionCallItem)
+	case functionCallOutput(FunctionCallItem)
 	case reasoning(ReasoningItem)
 }
 
@@ -446,6 +466,8 @@ extension OutputItem: Decodable {
 			self = .message(try OutputMessage(from: decoder))
 		case "function_call":
 			self = .functionCall(try FunctionCallItem(from: decoder))
+		case "function_call_output":
+			self = .functionCallOutput(try FunctionCallItem(from: decoder))
 		case "reasoning":
 			self = .reasoning(try ReasoningItem(from: decoder))
 		default:
@@ -607,7 +629,7 @@ public struct Reasoning: ResponseConfigParameter {
 	public let config: ReasoningConfig
 
 	/// Creates a reasoning configuration with the given effort level and optional summary.
-	public init(effort: ReasoningEffort, summary: Truncation? = nil) {
+	public init(effort: ReasoningEffort, summary: ReasoningSummaryType? = nil) {
 		self.config = ReasoningConfig(effort: effort, summary: summary)
 	}
 
@@ -719,6 +741,110 @@ public struct ResourceTimeout: ResponseConfigParameter {
 	}
 }
 
+/// Controls whether the response is stored server-side.
+public struct Store: ResponseConfigParameter {
+	public let value: Bool
+
+	/// Creates a store parameter.
+	public init(_ value: Bool) {
+		self.value = value
+	}
+
+	public func apply(to request: inout ResponseRequest) {
+		request.store = value
+	}
+}
+
+/// Controls whether the response uses background execution mode.
+public struct Background: ResponseConfigParameter {
+	public let value: Bool
+
+	/// Creates a background parameter.
+	public init(_ value: Bool) {
+		self.value = value
+	}
+
+	public func apply(to request: inout ResponseRequest) {
+		request.background = value
+	}
+}
+
+/// Caps the maximum number of tool calls per response (must be > 0).
+public struct MaxToolCalls: ResponseConfigParameter {
+	public let value: Int
+
+	/// Creates a max tool calls parameter. Validates value > 0.
+	/// - Throws: `LLMError.invalidValue` if not positive.
+	public init(_ value: Int) throws {
+		try validatePositive(value, parameterName: "MaxToolCalls")
+		self.value = value
+	}
+
+	public func apply(to request: inout ResponseRequest) {
+		request.maxToolCalls = value
+	}
+}
+
+/// Configures the text response format and verbosity.
+public struct TextConfig: ResponseConfigParameter {
+	public let value: TextParam
+
+	/// Creates a text config parameter.
+	public init(_ value: TextParam) {
+		self.value = value
+	}
+
+	public func apply(to request: inout ResponseRequest) {
+		request.text = value
+	}
+}
+
+// MARK: - Text Format
+
+/// Controls the verbosity of text responses.
+public enum TextVerbosity: String, Codable, Sendable {
+	case low, medium, high
+}
+
+/// Controls the output format of text responses.
+public enum TextFormat: Sendable, Encodable {
+	case text
+	case jsonObject
+	case jsonSchema(name: String, schema: JSONSchemaValue?, strict: Bool)
+
+	private enum CodingKeys: String, CodingKey {
+		case type, name, schema, strict
+	}
+
+	public func encode(to encoder: Encoder) throws {
+		var container = encoder.container(keyedBy: CodingKeys.self)
+		switch self {
+		case .text:
+			try container.encode("text", forKey: .type)
+		case .jsonObject:
+			try container.encode("json_object", forKey: .type)
+		case .jsonSchema(let name, let schema, let strict):
+			try container.encode("json_schema", forKey: .type)
+			try container.encode(name, forKey: .name)
+			try container.encode(strict, forKey: .strict)
+			if let schema {
+				try container.encode(schema, forKey: .schema)
+			}
+		}
+	}
+}
+
+/// Text response format and verbosity configuration.
+public struct TextParam: Sendable, Encodable {
+	public let format: TextFormat?
+	public let verbosity: TextVerbosity?
+
+	public init(format: TextFormat? = nil, verbosity: TextVerbosity? = nil) {
+		self.format = format
+		self.verbosity = verbosity
+	}
+}
+
 // MARK: - JSON Schema
 
 /// Type alias for the macros package JSON Schema type.
@@ -739,12 +865,18 @@ extension JSONSchemaValue {
 
 // MARK: - Tool Choice
 
+/// Mode used in `ToolChoice.allowedTools` — maps to the spec's `ToolChoiceValueEnum`.
+public enum ToolChoiceMode: String, Codable, Sendable {
+	case none, auto, required
+}
+
 /// Controls how the model selects tools during generation.
 public enum ToolChoice: Sendable, Equatable, Encodable {
 	case auto
 	case none
 	case required
 	case function(String)
+	case allowedTools(mode: ToolChoiceMode, tools: [String])
 
 	public func encode(to encoder: Encoder) throws {
 		switch self {
@@ -762,11 +894,31 @@ public enum ToolChoice: Sendable, Equatable, Encodable {
 			var container = encoder.container(keyedBy: FunctionChoiceKeys.self)
 			try container.encode("function", forKey: .type)
 			try container.encode(name, forKey: .name)
+		case .allowedTools(let mode, let tools):
+			// {"type":"allowed_tools","mode":"auto","tools":[{"type":"function","name":"..."},...]}
+			var container = encoder.container(keyedBy: AllowedToolsKeys.self)
+			try container.encode("allowed_tools", forKey: .type)
+			try container.encode(mode, forKey: .mode)
+			let toolParams = tools.map { AllowedToolEntry(name: $0) }
+			try container.encode(toolParams, forKey: .tools)
 		}
 	}
 
 	private enum FunctionChoiceKeys: String, CodingKey {
 		case type, name
+	}
+
+	private enum AllowedToolsKeys: String, CodingKey {
+		case type, mode, tools
+	}
+
+	private struct AllowedToolEntry: Encodable {
+		let name: String
+		func encode(to encoder: Encoder) throws {
+			var container = encoder.container(keyedBy: FunctionChoiceKeys.self)
+			try container.encode("function", forKey: .type)
+			try container.encode(name, forKey: .name)
+		}
 	}
 }
 
@@ -950,9 +1102,9 @@ public enum ResponseInput: Sendable, Encodable {
 /// Configuration for model reasoning.
 public struct ReasoningConfig: Sendable, Encodable {
 	public let effort: ReasoningEffort
-	public let summary: Truncation?
+	public let summary: ReasoningSummaryType?
 
-	public init(effort: ReasoningEffort, summary: Truncation? = nil) {
+	public init(effort: ReasoningEffort, summary: ReasoningSummaryType? = nil) {
 		self.effort = effort
 		self.summary = summary
 	}
@@ -977,6 +1129,10 @@ public struct ResponseRequest: Encodable, Sendable {
 	public var toolChoice: ToolChoice?
 	public var parallelToolCalls: Bool?
 	public var include: [String]?
+	public var store: Bool?
+	public var background: Bool?
+	public var maxToolCalls: Int?
+	public var text: TextParam?
 	public let stream: Bool
 	public var requestTimeout: TimeInterval?
 	public var resourceTimeout: TimeInterval?
@@ -993,7 +1149,9 @@ public struct ResponseRequest: Encodable, Sendable {
 		case metadata, tools
 		case toolChoice = "tool_choice"
 		case parallelToolCalls = "parallel_tool_calls"
-		case include, stream
+		case include, store, background
+		case maxToolCalls = "max_tool_calls"
+		case text, stream
 	}
 
 	/// Creates a request with builder-based input items and config.
@@ -1053,18 +1211,22 @@ public struct ResponseObject: Sendable, Decodable {
 	public let id: String
 	public let object: String
 	public let createdAt: Int
+	public let completedAt: Int?
 	public let model: String
 	public let output: [OutputItem]
 	public let status: ResponseStatus
 	public let usage: Usage?
 	public let error: ErrorInfo?
+	public let incompleteDetails: IncompleteDetails?
 	public let previousResponseId: String?
 	public let metadata: [String: String]?
 
 	private enum CodingKeys: String, CodingKey {
 		case id, object
 		case createdAt = "created_at"
+		case completedAt = "completed_at"
 		case model, output, status, usage, error
+		case incompleteDetails = "incomplete_details"
 		case previousResponseId = "previous_response_id"
 		case metadata
 	}
@@ -1074,24 +1236,66 @@ public struct ResponseObject: Sendable, Decodable {
 		id: String,
 		object: String = "response",
 		createdAt: Int = 0,
+		completedAt: Int? = nil,
 		model: String,
 		output: [OutputItem],
 		status: ResponseStatus,
 		usage: Usage? = nil,
 		error: ErrorInfo? = nil,
+		incompleteDetails: IncompleteDetails? = nil,
 		previousResponseId: String? = nil,
 		metadata: [String: String]? = nil
 	) {
 		self.id = id
 		self.object = object
 		self.createdAt = createdAt
+		self.completedAt = completedAt
 		self.model = model
 		self.output = output
 		self.status = status
 		self.usage = usage
 		self.error = error
+		self.incompleteDetails = incompleteDetails
 		self.previousResponseId = previousResponseId
 		self.metadata = metadata
+	}
+
+	/// Details explaining why a response is incomplete.
+	public struct IncompleteDetails: Sendable, Decodable {
+		public let reason: String
+
+		/// Creates a new IncompleteDetails.
+		public init(reason: String) {
+			self.reason = reason
+		}
+	}
+
+	/// Breakdown of output token usage.
+	public struct OutputTokensDetails: Sendable, Decodable {
+		public let reasoningTokens: Int
+
+		private enum CodingKeys: String, CodingKey {
+			case reasoningTokens = "reasoning_tokens"
+		}
+
+		/// Creates a new OutputTokensDetails.
+		public init(reasoningTokens: Int) {
+			self.reasoningTokens = reasoningTokens
+		}
+	}
+
+	/// Breakdown of input token usage.
+	public struct InputTokensDetails: Sendable, Decodable {
+		public let cachedTokens: Int
+
+		private enum CodingKeys: String, CodingKey {
+			case cachedTokens = "cached_tokens"
+		}
+
+		/// Creates a new InputTokensDetails.
+		public init(cachedTokens: Int) {
+			self.cachedTokens = cachedTokens
+		}
 	}
 
 	/// Token usage information.
@@ -1099,18 +1303,24 @@ public struct ResponseObject: Sendable, Decodable {
 		public let inputTokens: Int
 		public let outputTokens: Int
 		public let totalTokens: Int
+		public let outputTokensDetails: OutputTokensDetails?
+		public let inputTokensDetails: InputTokensDetails?
 
 		private enum CodingKeys: String, CodingKey {
 			case inputTokens = "input_tokens"
 			case outputTokens = "output_tokens"
 			case totalTokens = "total_tokens"
+			case outputTokensDetails = "output_tokens_details"
+			case inputTokensDetails = "input_tokens_details"
 		}
 
 		/// Creates a new Usage with the given token counts.
-		public init(inputTokens: Int, outputTokens: Int, totalTokens: Int) {
+		public init(inputTokens: Int, outputTokens: Int, totalTokens: Int, outputTokensDetails: OutputTokensDetails? = nil, inputTokensDetails: InputTokensDetails? = nil) {
 			self.inputTokens = inputTokens
 			self.outputTokens = outputTokens
 			self.totalTokens = totalTokens
+			self.outputTokensDetails = outputTokensDetails
+			self.inputTokensDetails = inputTokensDetails
 		}
 	}
 
@@ -1178,6 +1388,8 @@ public enum StreamEvent: Sendable {
 	case functionCallArgumentsDelta(delta: String, callId: String, index: Int)
 	case functionCallArgumentsDone(arguments: String, callId: String, index: Int)
 	case responseCompleted(ResponseObject)
+	case responseQueued(ResponseObject)
+	case responseIncomplete(ResponseObject)
 	case reasoningSummaryPartAdded(part: ReasoningSummary, index: Int, summaryIndex: Int)
 	case reasoningSummaryPartDone(part: ReasoningSummary, index: Int, summaryIndex: Int)
 	case responseFailed(ResponseObject)
@@ -1373,6 +1585,14 @@ public actor LLMClient {
 		case "response.failed":
 			if let wrapper = try? decoder.decode(ResponseEventWrapper.self, from: data) {
 				return .responseFailed(wrapper.response)
+			}
+		case "response.queued":
+			if let wrapper = try? decoder.decode(ResponseEventWrapper.self, from: data) {
+				return .responseQueued(wrapper.response)
+			}
+		case "response.incomplete":
+			if let wrapper = try? decoder.decode(ResponseEventWrapper.self, from: data) {
+				return .responseIncomplete(wrapper.response)
 			}
 		case "error":
 			if let str = String(data: data, encoding: .utf8) {

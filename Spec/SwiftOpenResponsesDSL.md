@@ -42,11 +42,20 @@ For tool calling and agent capabilities, see [ToolCalling.md](ToolCalling.md) an
 - **ReasoningEffort**: Controls reasoning depth.
   - Signature: `enum ReasoningEffort: String, Codable, Sendable { case none, low, medium, high, xhigh }`
 
+- **ReasoningSummaryType**: Controls reasoning summary verbosity.
+  - Signature: `enum ReasoningSummaryType: String, Codable, Sendable { case concise, detailed, auto }`
+
 - **ServiceTier**: Service tier selection.
   - Signature: `enum ServiceTier: String, Codable, Sendable { case auto, \`default\`, flex, priority }`
 
 - **Truncation**: Truncation strategy.
   - Signature: `enum Truncation: String, Codable, Sendable { case auto, disabled }`
+
+- **TextVerbosity**: Controls verbosity of text responses.
+  - Signature: `enum TextVerbosity: String, Codable, Sendable { case low, medium, high }`
+
+- **ToolChoiceMode**: Mode used within `ToolChoice.allowedTools`, maps to `ToolChoiceValueEnum`.
+  - Signature: `enum ToolChoiceMode: String, Codable, Sendable { case none, auto, required }`
 
 - **LLMError**: Custom errors for API failures.
   - Signature: `enum LLMError: Error, Equatable { case invalidURL, encodingFailed(String), networkError(String), decodingFailed(String), serverError(statusCode: Int, message: String?), rateLimit, invalidResponse, invalidValue(String), missingBaseURL, missingModel, maxIterationsExceeded(Int), unknownTool(String), toolExecutionFailed(toolName: String, message: String) }`
@@ -120,6 +129,7 @@ For tool calling and agent capabilities, see [ToolCalling.md](ToolCalling.md) an
   enum OutputItem: Sendable, Decodable {
       case message(OutputMessage)
       case functionCall(FunctionCallItem)
+      case functionCallOutput(FunctionCallItem)  // type: "function_call_output" echoed by server
       case reasoning(ReasoningItem)
   }
   ```
@@ -177,6 +187,7 @@ For tool calling and agent capabilities, see [ToolCalling.md](ToolCalling.md) an
   struct ReasoningItem: Sendable, Decodable {
       let id: String
       let summary: [ReasoningSummary]?
+      let content: [ReasoningContent]?
       let encryptedContent: String?
   }
   ```
@@ -185,6 +196,14 @@ For tool calling and agent capabilities, see [ToolCalling.md](ToolCalling.md) an
   ```swift
   struct ReasoningSummary: Sendable, Decodable {
       let type: String
+      let text: String
+  }
+  ```
+
+- **ReasoningContent**: Raw reasoning trace content (type: `"reasoning_text"`).
+  ```swift
+  struct ReasoningContent: Sendable, Decodable {
+      let type: String   // "reasoning_text"
       let text: String
   }
   ```
@@ -200,13 +219,18 @@ Each implementing `ResponseConfigParameter`:
 - **MaxOutputTokens**: `init(_ value: Int) throws` — validates >0, sets `request.maxOutputTokens`
 - **Instructions**: `init(_ value: String) throws` — validates non-empty, sets `request.instructions`
 - **PreviousResponseId**: `init(_ value: String) throws` — validates non-empty, sets `request.previousResponseId`
-- **Reasoning**: `init(effort: ReasoningEffort, summary: Truncation? = nil)` — sets `request.reasoning`
+- **Reasoning**: `init(effort: ReasoningEffort, summary: ReasoningSummaryType? = nil)` — sets `request.reasoning`
 - **TruncationParam**: `init(_ value: Truncation)` — sets `request.truncation`
 - **ServiceTierParam**: `init(_ value: ServiceTier)` — sets `request.serviceTier`
 - **Metadata**: `init(_ value: [String: String])` — sets `request.metadata`
 - **ParallelToolCalls**: `init(_ value: Bool)` — sets `request.parallelToolCalls`
+- **IncludeParam**: `init(_ values: [String]) throws` — validates non-empty, sets `request.include` (e.g. `["reasoning.encrypted_content"]`)
 - **RequestTimeout**: `init(_ value: TimeInterval) throws` — validates 10...900, sets `request.requestTimeout`
 - **ResourceTimeout**: `init(_ value: TimeInterval) throws` — validates 30...3600, sets `request.resourceTimeout`
+- **Store**: `init(_ value: Bool)` — sets `request.store` (persist response server-side)
+- **Background**: `init(_ value: Bool)` — sets `request.background` (use background execution mode)
+- **MaxToolCalls**: `init(_ value: Int) throws` — validates >0, sets `request.maxToolCalls`
+- **TextConfig**: `init(_ value: TextParam)` — sets `request.text` (response format and verbosity)
 
 ### 5. Convenience Message Functions
 
@@ -270,7 +294,19 @@ Each implementing `ResponseConfigParameter`:
   ```swift
   struct ReasoningConfig: Sendable, Encodable {
       let effort: ReasoningEffort
-      let summary: Truncation?
+      let summary: ReasoningSummaryType?
+  }
+  ```
+
+- **ToolChoice**: Controls how the model selects tools.
+  ```swift
+  enum ToolChoice: Sendable, Equatable, Encodable {
+      case auto                                         // "auto"
+      case none                                         // "none"
+      case required                                     // "required"
+      case function(String)                             // {"type":"function","name":"..."}
+      case allowedTools(mode: ToolChoiceMode, tools: [String])
+      // {"type":"allowed_tools","mode":"auto","tools":[{"type":"function","name":"..."},...]}
   }
   ```
 
@@ -282,6 +318,24 @@ Each implementing `ResponseConfigParameter`:
       let description: String
       let parameters: JSONSchema
       let strict: Bool?
+  }
+  ```
+
+- **TextFormat**: Output format of text responses.
+  ```swift
+  enum TextFormat: Sendable, Encodable {
+      case text                                              // {"type":"text"}
+      case jsonObject                                        // {"type":"json_object"}
+      case jsonSchema(name: String, schema: JSONSchema?, strict: Bool) // {"type":"json_schema",...}
+  }
+  ```
+
+- **TextParam**: Text response format and verbosity configuration.
+  ```swift
+  struct TextParam: Sendable, Encodable {
+      let format: TextFormat?
+      let verbosity: TextVerbosity?
+      init(format: TextFormat? = nil, verbosity: TextVerbosity? = nil)
   }
   ```
 
@@ -304,6 +358,11 @@ Each implementing `ResponseConfigParameter`:
       var tools: [FunctionToolParam]?
       var toolChoice: ToolChoice?
       var parallelToolCalls: Bool?
+      var include: [String]?
+      var store: Bool?             // JSON: "store"
+      var background: Bool?        // JSON: "background"
+      var maxToolCalls: Int?       // JSON: "max_tool_calls"
+      var text: TextParam?         // JSON: "text"
       let stream: Bool
       var requestTimeout: TimeInterval?   // Not encoded to JSON
       var resourceTimeout: TimeInterval?  // Not encoded to JSON
@@ -331,22 +390,35 @@ Each implementing `ResponseConfigParameter`:
   struct ResponseObject: Sendable, Decodable {
       let id: String
       let object: String
-      let createdAt: Int
+      let createdAt: Int          // JSON: "created_at"
+      let completedAt: Int?       // JSON: "completed_at"
       let model: String
       let output: [OutputItem]
       let status: ResponseStatus
       let usage: Usage?
       let error: ErrorInfo?
+      let incompleteDetails: IncompleteDetails?  // JSON: "incomplete_details"
       let previousResponseId: String?
       let metadata: [String: String]?
 
-      /// Token usage as defined by the Open Responses specification.
-      /// `input_tokens`, `output_tokens`, and `total_tokens` are the three
-      /// fields returned in the `usage` object on every response.
+      struct OutputTokensDetails: Sendable, Decodable {
+          let reasoningTokens: Int   // JSON: "reasoning_tokens"
+      }
+
+      struct InputTokensDetails: Sendable, Decodable {
+          let cachedTokens: Int      // JSON: "cached_tokens"
+      }
+
       struct Usage: Sendable, Decodable {
-          let inputTokens: Int    // JSON: "input_tokens"
-          let outputTokens: Int   // JSON: "output_tokens"
-          let totalTokens: Int    // JSON: "total_tokens"
+          let inputTokens: Int                          // JSON: "input_tokens"
+          let outputTokens: Int                         // JSON: "output_tokens"
+          let totalTokens: Int                          // JSON: "total_tokens"
+          let outputTokensDetails: OutputTokensDetails? // JSON: "output_tokens_details"
+          let inputTokensDetails: InputTokensDetails?   // JSON: "input_tokens_details"
+      }
+
+      struct IncompleteDetails: Sendable, Decodable {
+          let reason: String
       }
 
       struct ErrorInfo: Sendable, Decodable {
@@ -368,6 +440,8 @@ Each implementing `ResponseConfigParameter`:
   enum StreamEvent: Sendable {
       case responseCreated(ResponseObject)
       case responseInProgress(ResponseObject)
+      case responseQueued(ResponseObject)        // SSE: "response.queued"
+      case responseIncomplete(ResponseObject)    // SSE: "response.incomplete"
       case outputItemAdded(OutputItem, index: Int)
       case contentPartAdded(index: Int, contentIndex: Int)
       case contentPartDelta(delta: String, index: Int, contentIndex: Int)
@@ -376,6 +450,8 @@ Each implementing `ResponseConfigParameter`:
       case functionCallArgumentsDelta(delta: String, callId: String, index: Int)
       case functionCallArgumentsDone(arguments: String, callId: String, index: Int)
       case responseCompleted(ResponseObject)
+      case reasoningSummaryPartAdded(part: ReasoningSummary, index: Int, summaryIndex: Int)
+      case reasoningSummaryPartDone(part: ReasoningSummary, index: Int, summaryIndex: Int)
       case responseFailed(ResponseObject)
       case error(String)
   }
