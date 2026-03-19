@@ -672,6 +672,21 @@ public struct ParallelToolCalls: ResponseConfigParameter {
 	}
 }
 
+/// Specifies additional data to include in the response (e.g., `["usage"]` for token counts).
+public struct IncludeParam: ResponseConfigParameter {
+	public let values: [String]
+
+	/// Creates an include parameter with the specified values.
+	public init(_ values: [String]) throws {
+		guard !values.isEmpty else { throw LLMError.invalidValue("include must not be empty") }
+		self.values = values
+	}
+
+	public func apply(to request: inout ResponseRequest) {
+		request.include = values
+	}
+}
+
 /// Configures the timeout for individual HTTP requests (10-900 seconds).
 public struct RequestTimeout: ResponseConfigParameter {
 	public let value: TimeInterval
@@ -961,6 +976,7 @@ public struct ResponseRequest: Encodable, Sendable {
 	public var tools: [FunctionToolParam]?
 	public var toolChoice: ToolChoice?
 	public var parallelToolCalls: Bool?
+	public var include: [String]?
 	public let stream: Bool
 	public var requestTimeout: TimeInterval?
 	public var resourceTimeout: TimeInterval?
@@ -977,7 +993,7 @@ public struct ResponseRequest: Encodable, Sendable {
 		case metadata, tools
 		case toolChoice = "tool_choice"
 		case parallelToolCalls = "parallel_tool_calls"
-		case stream
+		case include, stream
 	}
 
 	/// Creates a request with builder-based input items and config.
