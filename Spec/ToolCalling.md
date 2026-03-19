@@ -43,32 +43,41 @@ Declarative syntax for configuring sessions with both input items and tools.
 - **buildExpression**: Accepts `InputItem` or `AgentTool`
 - **Control flow**: `buildEither`, `buildOptional`, `buildArray`
 
+### ToolSessionEvent (enum)
+Events emitted during a streaming ToolSession run.
+
+- **Cases**: `iterationStarted(Int)`, `llm(StreamEvent)`, `toolCallStarted(callId:name:arguments:)`, `toolCallCompleted(callId:name:output:duration:)`, `usageUpdate(ResponseObject.Usage, iteration: Int)`
+- **Conformance**: `Sendable`
+
 ### ToolSession (struct)
-Orchestrates the tool-calling loop using `previous_response_id` for conversation continuity.
+Orchestrates the tool-calling loop by accumulating full conversation history across iterations.
 
 - **ToolHandler**: `@Sendable (String) async throws -> String`
 - **Explicit init**: `client: LLMClient`, `tools: [FunctionToolParam]`, `toolChoice: ToolChoice? = nil`, `maxIterations: Int = 10`, `handlers: [String: ToolHandler]`
 - **Declarative init**: `client: LLMClient`, `model: String`, `toolChoice: ToolChoice? = nil`, `maxIterations: Int = 10`, `@SessionBuilder configure: () -> [SessionComponent]`
 - **run(model:input:config:)**: Accepts model, input items, config; returns `ToolSessionResult`
+- **run(model:input:configParams:)**: Accepts pre-computed `[ResponseConfigParameter]`; returns `ToolSessionResult`
 - **run(_ prompt:)**: Shorthand for declarative init
+- **stream(model:input:configParams:)**: Returns `AsyncThrowingStream<ToolSessionEvent, Error>`
+- **stream(_ prompt:)**: Streaming shorthand for declarative init
 
-Key difference from Chat Completions: The tool loop uses `previous_response_id` instead of re-sending full message history. Each iteration sends only the new function_call_output items plus the previous response ID.
+Key difference from Chat Completions: The tool loop accumulates full conversation history in `currentInput` across iterations — appending `.functionCall` and `.functionCallOutput` items each round-trip — rather than using `previous_response_id`.
 
 ### ToolSessionResult (struct)
-- **Fields**: `response: ResponseObject`, `iterations: Int`, `log: [ToolCallLogEntry]`
-- **Token usage**: `result.response.usage` surfaces token counts (`inputTokens`, `outputTokens`, `totalTokens`) for the final response in the tool loop. Callers interested in per-iteration totals must sum across intermediate responses manually — `ToolSessionResult` does not accumulate usage across iterations.
-- **Agent limitation**: `Agent.run()` and `Agent.send()` return `String` only — usage data is not surfaced. Callers requiring token counts should use `ToolSession` or `client.send()` directly.
+- **Fields**: `response: ResponseObject`, `iterations: Int`, `log: [ToolCallLogEntry]`, `iterationUsages: [ResponseObject.Usage]`
+- **Computed**: `totalUsage: ResponseObject.Usage?` — aggregates all iteration usages; `nil` if no iteration included usage
 
 ### ToolCallLogEntry (struct)
 - **Fields**: `name: String`, `arguments: String`, `result: String`, `duration: Duration`
 
 ### Agent (actor)
-High-level persistent agent with `lastResponseId` for conversation continuity.
+High-level persistent agent with `lastResponseId` for conversation continuity between turns.
 
 - **Explicit init**: `client: LLMClient`, `model: String`, `instructions: String? = nil`, `tools: [FunctionToolParam] = []`, `toolChoice: ToolChoice? = nil`, `toolHandlers: [String: ToolSession.ToolHandler] = [:]`, `config: [ResponseConfigParameter] = []`, `maxToolIterations: Int = 10`
-- **Declarative init**: `client: LLMClient`, `model: String`, `maxToolIterations: Int = 10`, `@SessionBuilder configure: () -> [SessionComponent]`
-- **Methods**: `send(_:) -> String`, `run(_:) -> String` (alias), `reset()`
-- **Properties**: `lastResponseId: String?`, `transcript: [TranscriptEntry]`, `registeredToolNames: [String]`, `toolCount: Int`
+- **Builder init**: `client: LLMClient`, `model: String`, `instructions: String? = nil`, `maxToolIterations: Int = 10`, `@ResponseConfigBuilder config: () throws -> [ResponseConfigParameter]`, `@AgentToolBuilder tools: () -> [AgentTool]`
+- **SessionBuilder init**: `client: LLMClient`, `model: String`, `maxToolIterations: Int = 10`, `@SessionBuilder configure: () -> [SessionComponent]`
+- **Methods**: `send(_:) -> String`, `run(_:) -> String` (alias), `stream(_:) -> AsyncThrowingStream<ToolSessionEvent, Error>`, `reset()`
+- **Properties**: `lastResponseId: String?`, `lastUsage: ResponseObject.Usage?`, `transcript: [TranscriptEntry]`, `registeredToolNames: [String]`, `toolCount: Int`
 
 ### TranscriptEntry (enum)
 - **Cases**: `userMessage(String)`, `assistantMessage(String)`, `toolCall(name:arguments:)`, `toolResult(name:result:duration:)`, `error(String)`

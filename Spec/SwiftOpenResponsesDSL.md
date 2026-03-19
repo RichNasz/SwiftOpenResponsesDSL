@@ -64,6 +64,7 @@ For tool calling and agent capabilities, see [ToolCalling.md](ToolCalling.md) an
   ```swift
   enum InputItem: Sendable, Encodable {
       case message(InputMessage)
+      case functionCall(FunctionCallItem)
       case functionCallOutput(FunctionCallOutputItem)
       case itemReference(ItemReference)
   }
@@ -160,9 +161,9 @@ For tool calling and agent capabilities, see [ToolCalling.md](ToolCalling.md) an
   }
   ```
 
-- **FunctionCallItem**: A function call in the output.
+- **FunctionCallItem**: A function call in the output (also re-sent as input during tool loops).
   ```swift
-  struct FunctionCallItem: Sendable, Decodable {
+  struct FunctionCallItem: Sendable, Codable {
       let id: String
       let callId: String
       let name: String
@@ -216,6 +217,18 @@ Each implementing `ResponseConfigParameter`:
 - `FunctionOutput(callId: String, output: String) -> InputItem` — creates `.functionCallOutput(FunctionCallOutputItem(callId: callId, output: output))`
 
 ### 6. Result Builders
+
+- **ToolsBuilder**: Composes `FunctionToolParam` arrays declaratively.
+  ```swift
+  @resultBuilder
+  struct ToolsBuilder {
+      static func buildBlock(_ components: FunctionToolParam...) -> [FunctionToolParam]
+      static func buildEither(first: [FunctionToolParam]) -> [FunctionToolParam]
+      static func buildEither(second: [FunctionToolParam]) -> [FunctionToolParam]
+      static func buildOptional(_ component: [FunctionToolParam]?) -> [FunctionToolParam]
+      static func buildArray(_ components: [[FunctionToolParam]]) -> [FunctionToolParam]
+  }
+  ```
 
 - **InputBuilder**: Composes input item sequences.
   ```swift
@@ -360,6 +373,8 @@ Each implementing `ResponseConfigParameter`:
       case contentPartDelta(delta: String, index: Int, contentIndex: Int)
       case contentPartDone(index: Int, contentIndex: Int)
       case outputItemDone(OutputItem, index: Int)
+      case functionCallArgumentsDelta(delta: String, callId: String, index: Int)
+      case functionCallArgumentsDone(arguments: String, callId: String, index: Int)
       case responseCompleted(ResponseObject)
       case responseFailed(ResponseObject)
       case error(String)

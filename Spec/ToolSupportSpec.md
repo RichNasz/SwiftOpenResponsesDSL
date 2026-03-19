@@ -117,11 +117,32 @@ let result = try await session.run(
 print(result.response.firstOutputText ?? "")
 ```
 
-Key difference from Chat Completions: The tool loop uses `previous_response_id` instead of re-sending full message history.
+Key difference from Chat Completions: The tool loop accumulates full conversation history in `currentInput` across iterations — appending `.functionCall` and `.functionCallOutput` items each round-trip — rather than using `previous_response_id`.
+
+### Streaming ToolSession
+
+```swift
+for try await event in session.stream("Weather in Paris?") {
+    switch event {
+    case .iterationStarted(let n):
+        print("Iteration \(n)")
+    case .llm(.contentPartDelta(let delta, _, _)):
+        print(delta, terminator: "")
+    case .toolCallStarted(_, let name, _):
+        print("Calling tool: \(name)")
+    case .toolCallCompleted(_, let name, let output, _):
+        print("Tool \(name) returned: \(output)")
+    case .usageUpdate(let usage, let iteration):
+        print("Iteration \(iteration): \(usage.totalTokens) tokens")
+    default:
+        break
+    }
+}
+```
 
 ### Agent — Persistent Conversations
 
-**Declarative style** (preferred):
+**Declarative style with `@SessionBuilder`** (preferred):
 ```swift
 let agent = try Agent(client: client, model: "gpt-4o") {
     System("You are a helpful assistant.")
@@ -134,7 +155,25 @@ let response1: String = try await agent.run("Weather in Paris?")
 let response2: String = try await agent.run("How about London?")
 ```
 
-Agent uses `lastResponseId` for conversation continuity instead of maintaining full message history.
+**Builder style with `@AgentToolBuilder`**:
+```swift
+let agent = try Agent(client: client, model: "gpt-4o", instructions: "You are helpful.") {
+    try Temperature(0.7)
+} tools: {
+    AgentTool(tool: weatherTool) { args in return "{\"temp\": 72}" }
+}
+```
+
+**Streaming**:
+```swift
+for try await event in agent.stream("Weather in Paris?") {
+    if case .llm(.contentPartDelta(let delta, _, _)) = event {
+        print(delta, terminator: "")
+    }
+}
+```
+
+Agent uses `lastResponseId` for conversation continuity between turns. Within each turn's tool-calling loop, full history is accumulated (same as `ToolSession`).
 
 ### Error Handling
 
@@ -167,13 +206,29 @@ if let usage = response.usage {
 **After `ToolSession.run()`**:
 ```swift
 let result = try await session.run("What is the weather in Paris?")
+
+// Final response usage only:
 if let usage = result.response.usage {
     print("Final response used \(usage.totalTokens) tokens")
 }
+
+// Per-iteration breakdown:
+for (i, usage) in result.iterationUsages.enumerated() {
+    print("Iteration \(i + 1): \(usage.totalTokens) tokens")
+}
+
+// Aggregate across all iterations:
+if let total = result.totalUsage {
+    print("Total: \(total.inputTokens) in, \(total.outputTokens) out")
+}
 ```
 
-`ToolSessionResult.response` holds the final response only. To track cumulative usage across all tool-calling iterations, accumulate token counts in each handler or use `client.send()` directly with manual loop management.
-
-**`Agent` limitation**: `Agent.run()` and `Agent.send()` return `String` only — usage data is not surfaced. Use `ToolSession` or `client.send()` directly when token tracking is required.
+**After `Agent.send()` / `Agent.run()`**:
+```swift
+let _ = try await agent.send("Weather in Paris?")
+if let usage = await agent.lastUsage {
+    print("Last response: \(usage.totalTokens) tokens")
+}
+```
 
 For implementation details, see [ToolSupportSpec-HOW.md](ToolSupportSpec-HOW.md).
