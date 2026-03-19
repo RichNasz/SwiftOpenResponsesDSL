@@ -94,10 +94,10 @@ public struct ToolSessionResult: Sendable {
 	}
 }
 
-/// Orchestrates the tool-calling loop using `previous_response_id` for conversation continuity.
+/// Orchestrates the tool-calling loop, accumulating full conversation history across iterations.
 ///
-/// Unlike the Chat Completions DSL which re-sends full message history, this implementation
-/// uses the Responses API's `previous_response_id` to maintain context between iterations.
+/// Each iteration appends function calls and their outputs to the input array, ensuring
+/// the model sees what tools it already called and what results it received.
 public struct ToolSession: Sendable {
 	/// Closure type for tool handlers: takes raw JSON arguments, returns result string.
 	public typealias ToolHandler = @Sendable (String) async throws -> String
@@ -185,9 +185,10 @@ public struct ToolSession: Sendable {
 		var allLog: [ToolCallLogEntry] = []
 		var allUsages: [ResponseObject.Usage] = []
 		var iterations = 0
+		var currentInput = input
 
 		// Build and send initial request
-		var request = try ResponseRequest(model: model, input: input)
+		var request = try ResponseRequest(model: model, input: currentInput)
 		request.tools = tools
 		request.toolChoice = toolChoice
 		for param in configParams {
@@ -247,11 +248,13 @@ public struct ToolSession: Sendable {
 				return collected.sorted { $0.0 < $1.0 }
 			}
 
-			// Build function call output items
-			var outputItems: [InputItem] = []
+			// Accumulate function calls and their outputs into conversation history
+			for call in functionCalls {
+				currentInput.append(.functionCall(call))
+			}
 			for (index, result, logEntry) in results {
 				allLog.append(logEntry)
-				outputItems.append(
+				currentInput.append(
 					.functionCallOutput(FunctionCallOutputItem(
 						callId: functionCalls[index].callId,
 						output: result
@@ -259,9 +262,8 @@ public struct ToolSession: Sendable {
 				)
 			}
 
-			// Send next request with previous_response_id
-			var nextRequest = try ResponseRequest(model: model, input: outputItems)
-			nextRequest.previousResponseId = response.id
+			// Send next request with accumulated conversation history
+			var nextRequest = try ResponseRequest(model: model, input: currentInput)
 			nextRequest.tools = tools
 			nextRequest.toolChoice = toolChoice
 			for param in configParams {
@@ -295,7 +297,6 @@ public struct ToolSession: Sendable {
 			let task = Task {
 				do {
 					var currentInput = input
-					var previousResponseId: String? = nil
 					var iteration = 0
 
 					while true {
@@ -303,9 +304,6 @@ public struct ToolSession: Sendable {
 
 						// Build request
 						var request = try ResponseRequest(model: model, stream: true, input: currentInput)
-						if let prevId = previousResponseId {
-							request.previousResponseId = prevId
-						}
 						request.tools = tools
 						request.toolChoice = toolChoice
 						for param in configParams {
@@ -314,7 +312,6 @@ public struct ToolSession: Sendable {
 
 						// Stream the LLM response, collecting function calls
 						var functionCalls: [FunctionCallItem] = []
-						var completedResponseId: String? = nil
 						var completedUsage: ResponseObject.Usage? = nil
 
 						for try await event in client.stream(request) {
@@ -325,7 +322,6 @@ public struct ToolSession: Sendable {
 									functionCalls.append(call)
 								}
 							case .responseCompleted(let response):
-								completedResponseId = response.id
 								completedUsage = response.usage
 							default:
 								break
@@ -382,19 +378,18 @@ public struct ToolSession: Sendable {
 							return collected.sorted { $0.0 < $1.0 }
 						}
 
-						// Build function call output items for next iteration
-						var outputItems: [InputItem] = []
+						// Accumulate function calls and their outputs into conversation history
+						for call in functionCalls {
+							currentInput.append(.functionCall(call))
+						}
 						for (_, callId, result, _) in results {
-							outputItems.append(
+							currentInput.append(
 								.functionCallOutput(FunctionCallOutputItem(
 									callId: callId,
 									output: result
 								))
 							)
 						}
-
-						previousResponseId = completedResponseId
-						currentInput = outputItems
 						iteration += 1
 					}
 				} catch {

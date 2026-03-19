@@ -234,6 +234,7 @@ public struct ItemReference: Sendable, Encodable {
 /// Polymorphic input item for the Responses API.
 public enum InputItem: Sendable, Encodable {
 	case message(InputMessage)
+	case functionCall(FunctionCallItem)
 	case functionCallOutput(FunctionCallOutputItem)
 	case itemReference(ItemReference)
 
@@ -241,6 +242,8 @@ public enum InputItem: Sendable, Encodable {
 		switch self {
 		case .message(let msg):
 			try msg.encode(to: encoder)
+		case .functionCall(let call):
+			try call.encode(to: encoder)
 		case .functionCallOutput(let item):
 			try item.encode(to: encoder)
 		case .itemReference(let ref):
@@ -337,7 +340,7 @@ public struct OutputMessage: Sendable, Decodable {
 }
 
 /// A function call in the response output.
-public struct FunctionCallItem: Sendable, Decodable {
+public struct FunctionCallItem: Sendable, Codable {
 	public let id: String
 	public let callId: String
 	public let name: String
@@ -345,9 +348,29 @@ public struct FunctionCallItem: Sendable, Decodable {
 	public let status: String?
 
 	private enum CodingKeys: String, CodingKey {
+		case type
 		case id
 		case callId = "call_id"
 		case name, arguments, status
+	}
+
+	public func encode(to encoder: Encoder) throws {
+		var container = encoder.container(keyedBy: CodingKeys.self)
+		try container.encode("function_call", forKey: .type)
+		try container.encode(id, forKey: .id)
+		try container.encode(callId, forKey: .callId)
+		try container.encode(name, forKey: .name)
+		try container.encode(arguments, forKey: .arguments)
+		try container.encodeIfPresent(status, forKey: .status)
+	}
+
+	public init(from decoder: Decoder) throws {
+		let container = try decoder.container(keyedBy: CodingKeys.self)
+		self.id = try container.decode(String.self, forKey: .id)
+		self.callId = try container.decode(String.self, forKey: .callId)
+		self.name = try container.decode(String.self, forKey: .name)
+		self.arguments = try container.decode(String.self, forKey: .arguments)
+		self.status = try container.decodeIfPresent(String.self, forKey: .status)
 	}
 
 	/// Creates a new FunctionCallItem.
