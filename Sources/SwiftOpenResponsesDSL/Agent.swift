@@ -15,6 +15,7 @@ import SwiftLLMToolMacros
 public enum TranscriptEntry: Sendable {
 	case userMessage(String)
 	case assistantMessage(String)
+	case reasoning(ReasoningItem)
 	case toolCall(name: String, arguments: String)
 	case toolResult(name: String, result: String, duration: Duration)
 	case error(String)
@@ -230,6 +231,9 @@ public actor Agent {
 			let content = response.firstOutputText ?? ""
 			_lastResponseId = response.id
 			_lastUsage = response.usage
+			for item in response.reasoningItems {
+				_transcript.append(.reasoning(item))
+			}
 			_transcript.append(.assistantMessage(content))
 			return content
 		}
@@ -267,6 +271,9 @@ public actor Agent {
 		let content = result.response.firstOutputText ?? ""
 		_lastResponseId = result.response.id
 		_lastUsage = result.response.usage
+		for item in result.response.reasoningItems {
+			_transcript.append(.reasoning(item))
+		}
 		_transcript.append(.assistantMessage(content))
 		return content
 	}
@@ -315,6 +322,9 @@ public actor Agent {
 								textAccumulator += delta
 							case .responseCompleted(let response):
 								self.updateLastResponseId(response.id)
+								for item in response.reasoningItems {
+									self.appendTranscriptEntry(.reasoning(item))
+								}
 							default:
 								break
 							}
@@ -347,6 +357,9 @@ public actor Agent {
 								textAccumulator += delta
 							case .llm(.responseCompleted(let response)):
 								self.updateLastResponseId(response.id)
+								for item in response.reasoningItems {
+									self.appendTranscriptEntry(.reasoning(item))
+								}
 							case .usageUpdate(let usage, _):
 								self.updateLastUsage(usage)
 							case .toolCallStarted(_, let name, let arguments):

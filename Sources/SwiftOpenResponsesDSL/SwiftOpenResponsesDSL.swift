@@ -445,6 +445,22 @@ public struct ReasoningItem: Sendable, Decodable {
 	}
 }
 
+extension ReasoningItem {
+	/// Concatenated text from all summary entries, joined by newlines.
+	/// `nil` if summary is absent or empty.
+	public var summaryText: String? {
+		guard let parts = summary, !parts.isEmpty else { return nil }
+		return parts.map(\.text).joined(separator: "\n")
+	}
+
+	/// Concatenated text from all raw content entries, joined by newlines.
+	/// `nil` if content is absent or empty.
+	public var contentText: String? {
+		guard let parts = content, !parts.isEmpty else { return nil }
+		return parts.map(\.text).joined(separator: "\n")
+	}
+}
+
 /// Polymorphic output item from the Responses API.
 public enum OutputItem: Sendable {
 	case message(OutputMessage)
@@ -1371,6 +1387,21 @@ extension ResponseObject {
 	/// Total tokens used (0 if usage unavailable).
 	public var totalTokens: Int {
 		usage?.totalTokens ?? 0
+	}
+
+	/// All reasoning items from the output, in order.
+	public var reasoningItems: [ReasoningItem] {
+		output.compactMap { if case .reasoning(let r) = $0 { return r } else { return nil } }
+	}
+
+	/// The first reasoning item in the output, if any.
+	public var firstReasoningItem: ReasoningItem? {
+		reasoningItems.first
+	}
+
+	/// Reasoning tokens used (0 if unavailable).
+	public var reasoningTokens: Int {
+		usage?.outputTokensDetails?.reasoningTokens ?? 0
 	}
 }
 

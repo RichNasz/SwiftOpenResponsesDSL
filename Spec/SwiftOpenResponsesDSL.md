@@ -191,6 +191,9 @@ For tool calling and agent capabilities, see [ToolCalling.md](ToolCalling.md) an
       let encryptedContent: String?
   }
   ```
+  - Computed properties:
+    - `summaryText: String?` — concatenated text from all summary entries joined by `"\n"`; `nil` if absent or empty
+    - `contentText: String?` — concatenated text from all content entries joined by `"\n"`; `nil` if absent or empty
 
 - **ReasoningSummary**: A summary entry in reasoning.
   ```swift
@@ -432,6 +435,9 @@ Each implementing `ResponseConfigParameter`:
     - `firstFunctionCalls: [FunctionCallItem]?` — all function calls from output
     - `requiresToolExecution: Bool` — true if output contains function calls
     - `totalTokens: Int` — total tokens from usage
+    - `reasoningItems: [ReasoningItem]` — all reasoning items from the output, in order
+    - `firstReasoningItem: ReasoningItem?` — the first reasoning item in the output, if any
+    - `reasoningTokens: Int` — reasoning tokens used (0 if unavailable)
 
 ### 8. Streaming Types
 

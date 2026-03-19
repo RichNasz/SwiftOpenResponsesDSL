@@ -80,7 +80,8 @@ High-level persistent agent with `lastResponseId` for conversation continuity be
 - **Properties**: `lastResponseId: String?`, `lastUsage: ResponseObject.Usage?`, `transcript: [TranscriptEntry]`, `registeredToolNames: [String]`, `toolCount: Int`
 
 ### TranscriptEntry (enum)
-- **Cases**: `userMessage(String)`, `assistantMessage(String)`, `toolCall(name:arguments:)`, `toolResult(name:result:duration:)`, `error(String)`
+- **Cases**: `userMessage(String)`, `assistantMessage(String)`, `reasoning(ReasoningItem)`, `toolCall(name:arguments:)`, `toolResult(name:result:duration:)`, `error(String)`
+- Transcript ordering per turn: `userMessage → reasoning(item)... → assistantMessage`, mirroring API output order.
 
 ### AgentTool (struct)
 Pairs a `FunctionToolParam` definition with its handler closure.

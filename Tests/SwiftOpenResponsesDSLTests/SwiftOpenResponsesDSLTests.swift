@@ -797,6 +797,83 @@ import Testing
 	}
 }
 
+// MARK: - Reasoning Convenience
+
+@Test func testReasoningItemSummaryText() {
+	let item = ReasoningItem(
+		id: "rs_1",
+		summary: [
+			ReasoningSummary(type: "summary_text", text: "First thought"),
+			ReasoningSummary(type: "summary_text", text: "Second thought"),
+		]
+	)
+	#expect(item.summaryText == "First thought\nSecond thought")
+
+	let emptyItem = ReasoningItem(id: "rs_2", summary: [])
+	#expect(emptyItem.summaryText == nil)
+
+	let nilItem = ReasoningItem(id: "rs_3")
+	#expect(nilItem.summaryText == nil)
+}
+
+@Test func testReasoningItemContentText() {
+	let item = ReasoningItem(
+		id: "rs_1",
+		content: [
+			ReasoningContent(type: "reasoning_text", text: "Raw trace A"),
+			ReasoningContent(type: "reasoning_text", text: "Raw trace B"),
+		]
+	)
+	#expect(item.contentText == "Raw trace A\nRaw trace B")
+
+	let emptyItem = ReasoningItem(id: "rs_2", content: [])
+	#expect(emptyItem.contentText == nil)
+
+	let nilItem = ReasoningItem(id: "rs_3")
+	#expect(nilItem.contentText == nil)
+}
+
+@Test func testResponseObjectReasoningExtensions() throws {
+	let json = """
+	{
+	  "id": "resp_1", "object": "response", "created_at": 0, "model": "o3-mini",
+	  "output": [
+	    {
+	      "type": "reasoning",
+	      "id": "rs_1",
+	      "summary": [{"type": "summary_text", "text": "Thinking..."}]
+	    }
+	  ],
+	  "status": "completed",
+	  "usage": {
+	    "input_tokens": 10, "output_tokens": 50, "total_tokens": 60,
+	    "output_tokens_details": { "reasoning_tokens": 40 }
+	  }
+	}
+	"""
+	let response = try JSONDecoder().decode(ResponseObject.self, from: Data(json.utf8))
+
+	#expect(response.reasoningItems.count == 1)
+	#expect(response.firstReasoningItem != nil)
+	#expect(response.firstReasoningItem?.id == "rs_1")
+	#expect(response.reasoningTokens == 40)
+}
+
+@Test func testTranscriptEntryReasoningCase() {
+	let item = ReasoningItem(
+		id: "rs_1",
+		summary: [ReasoningSummary(type: "summary_text", text: "Some thought")]
+	)
+	let entry = TranscriptEntry.reasoning(item)
+
+	if case .reasoning(let r) = entry {
+		#expect(r.id == "rs_1")
+		#expect(r.summaryText == "Some thought")
+	} else {
+		Issue.record("Expected reasoning case")
+	}
+}
+
 @Test func testToolSessionEventLLMWrapper() throws {
 	let jsonString = """
 	{
