@@ -672,7 +672,7 @@ public struct ParallelToolCalls: ResponseConfigParameter {
 	}
 }
 
-/// Specifies additional data to include in the response (e.g., `["usage"]` for token counts).
+/// Specifies additional data to include in the response (e.g., `["reasoning.encrypted_content"]`).
 public struct IncludeParam: ResponseConfigParameter {
 	public let values: [String]
 
@@ -1327,12 +1327,12 @@ public actor LLMClient {
 	private static func parseStreamEvent(eventType: String, data: Data, decoder: JSONDecoder) -> StreamEvent? {
 		switch eventType {
 		case "response.created":
-			if let obj = try? decoder.decode(ResponseObject.self, from: data) {
-				return .responseCreated(obj)
+			if let wrapper = try? decoder.decode(ResponseEventWrapper.self, from: data) {
+				return .responseCreated(wrapper.response)
 			}
 		case "response.in_progress":
-			if let obj = try? decoder.decode(ResponseObject.self, from: data) {
-				return .responseInProgress(obj)
+			if let wrapper = try? decoder.decode(ResponseEventWrapper.self, from: data) {
+				return .responseInProgress(wrapper.response)
 			}
 		case "response.output_item.added":
 			if let wrapper = try? decoder.decode(OutputItemEventWrapper.self, from: data) {
@@ -1365,12 +1365,12 @@ public actor LLMClient {
 				return .functionCallArgumentsDone(arguments: arguments, callId: wrapper.callId, index: wrapper.outputIndex)
 			}
 		case "response.completed":
-			if let obj = try? decoder.decode(ResponseObject.self, from: data) {
-				return .responseCompleted(obj)
+			if let wrapper = try? decoder.decode(ResponseEventWrapper.self, from: data) {
+				return .responseCompleted(wrapper.response)
 			}
 		case "response.failed":
-			if let obj = try? decoder.decode(ResponseObject.self, from: data) {
-				return .responseFailed(obj)
+			if let wrapper = try? decoder.decode(ResponseEventWrapper.self, from: data) {
+				return .responseFailed(wrapper.response)
 			}
 		case "error":
 			if let str = String(data: data, encoding: .utf8) {
@@ -1384,6 +1384,10 @@ public actor LLMClient {
 }
 
 // MARK: - SSE Event Wrapper Types
+
+struct ResponseEventWrapper: Decodable {
+	let response: ResponseObject
+}
 
 struct OutputItemEventWrapper: Decodable {
 	let item: OutputItem
