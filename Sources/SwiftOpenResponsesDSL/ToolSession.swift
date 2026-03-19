@@ -194,13 +194,6 @@ public struct ToolSession: Sendable {
 		for param in configParams {
 			param.apply(to: &request)
 		}
-		// Ensure usage data is included in responses
-		if request.include == nil {
-			request.include = ["usage"]
-		} else if !(request.include?.contains("usage") ?? false) {
-			request.include?.append("usage")
-		}
-
 		var response = try await client.send(request)
 		if let u = response.usage { allUsages.append(u) }
 
@@ -315,13 +308,6 @@ public struct ToolSession: Sendable {
 						for param in configParams {
 							param.apply(to: &request)
 						}
-						// Ensure usage data is included in streaming responses
-						if request.include == nil {
-							request.include = ["usage"]
-						} else if !(request.include?.contains("usage") ?? false) {
-							request.include?.append("usage")
-						}
-
 						// Stream the LLM response, collecting function calls
 						var functionCalls: [FunctionCallItem] = []
 						var completedUsage: ResponseObject.Usage? = nil
