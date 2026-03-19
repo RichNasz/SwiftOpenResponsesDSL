@@ -25,6 +25,10 @@ enum LiveTestConfig {
 		baseURL.hasSuffix("/") ? "\(baseURL)v1/responses" : "\(baseURL)/v1/responses"
 	}()
 
+	static let reasoningModel: String = {
+		ProcessInfo.processInfo.environment["OPENRESPONSES_REASONING_MODEL"] ?? "o3-mini"
+	}()
+
 	static let isServerAvailable: Bool = {
 		guard let url = URL(string: endpointURL) else { return false }
 		var request = URLRequest(url: url)
@@ -345,6 +349,79 @@ struct LiveTests {
 		let usage = await agent.lastUsage
 		#expect(usage != nil)
 		#expect(usage!.totalTokens > 0)
+	}
+
+	@Test func reasoningNonStreaming() async throws {
+		let request = try ResponseRequest(
+			model: LiveTestConfig.reasoningModel,
+			config: {
+				try RequestTimeout(240)
+				Reasoning(effort: .low, summary: .concise)
+			},
+			text: "What is 1+1?"
+		)
+
+		let response = try await client.send(request)
+
+		#expect(response.status == .completed)
+		let hasReasoningItem = response.output.contains {
+			if case .reasoning = $0 { return true }
+			return false
+		}
+		#expect(hasReasoningItem)
+		#expect((response.usage?.outputTokensDetails?.reasoningTokens ?? 0) > 0)
+	}
+
+	@Test func reasoningStreaming() async throws {
+		let request = try ResponseRequest(
+			model: LiveTestConfig.reasoningModel,
+			stream: true,
+			config: {
+				try RequestTimeout(240)
+				Reasoning(effort: .low, summary: .concise)
+			},
+			text: "What is 1+1?"
+		)
+
+		var gotSummaryPartAdded = false
+		var gotSummaryPartDone = false
+		var completedResponse: ResponseObject?
+		var gotAnyContent = false
+
+		for try await event in client.stream(request) {
+			switch event {
+			case .reasoningSummaryPartAdded:
+				gotSummaryPartAdded = true
+			case .reasoningSummaryPartDone:
+				gotSummaryPartDone = true
+			case .contentPartDelta:
+				gotAnyContent = true
+			case .responseCompleted(let response):
+				completedResponse = response
+			default:
+				break
+			}
+		}
+
+		// Stream must produce some output
+		#expect(gotAnyContent || completedResponse != nil)
+
+		// If the server emits summary events, both added and done must appear together
+		if gotSummaryPartAdded || gotSummaryPartDone {
+			#expect(gotSummaryPartAdded)
+			#expect(gotSummaryPartDone)
+		}
+
+		// If the response was completed, verify reasoning item presence when summary events were emitted
+		if let response = completedResponse {
+			let hasReasoningItem = response.output.contains {
+				if case .reasoning = $0 { return true }
+				return false
+			}
+			if gotSummaryPartAdded {
+				#expect(hasReasoningItem)
+			}
+		}
 	}
 
 	@Test func maxOutputTokens() async throws {

@@ -748,6 +748,55 @@ import Testing
 	#expect(result.totalUsage == nil)
 }
 
+// MARK: - Reasoning Stream Events
+
+@Test func testUsageWithReasoningTokens() throws {
+	let json = """
+	{
+	  "id": "resp_1", "object": "response", "created_at": 0, "model": "o3-mini",
+	  "output": [], "status": "completed",
+	  "usage": {
+	    "input_tokens": 10, "output_tokens": 50, "total_tokens": 60,
+	    "output_tokens_details": { "reasoning_tokens": 40 }
+	  }
+	}
+	"""
+	let response = try JSONDecoder().decode(ResponseObject.self, from: Data(json.utf8))
+	#expect(response.usage?.outputTokensDetails?.reasoningTokens == 40)
+}
+
+@Test func testReasoningSummaryStreamEvents() {
+	let addedEvent = StreamEvent.reasoningSummaryPartAdded(
+		part: ReasoningSummary(type: "summary_text", text: "thinking..."),
+		index: 0,
+		summaryIndex: 0
+	)
+
+	if case .reasoningSummaryPartAdded(let part, let index, let summaryIndex) = addedEvent {
+		#expect(part.text == "thinking...")
+		#expect(part.type == "summary_text")
+		#expect(index == 0)
+		#expect(summaryIndex == 0)
+	} else {
+		Issue.record("Expected reasoningSummaryPartAdded case")
+	}
+
+	let doneEvent = StreamEvent.reasoningSummaryPartDone(
+		part: ReasoningSummary(type: "summary_text", text: "done thinking"),
+		index: 0,
+		summaryIndex: 0
+	)
+
+	if case .reasoningSummaryPartDone(let part, let index, let summaryIndex) = doneEvent {
+		#expect(part.text == "done thinking")
+		#expect(part.type == "summary_text")
+		#expect(index == 0)
+		#expect(summaryIndex == 0)
+	} else {
+		Issue.record("Expected reasoningSummaryPartDone case")
+	}
+}
+
 @Test func testToolSessionEventLLMWrapper() throws {
 	let jsonString = """
 	{
