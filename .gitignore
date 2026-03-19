@@ -5,4 +5,6 @@ xcuserdata/
 DerivedData/
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 .netrc
-.claude/
+.claude/*
+!.claude/commands/
+!.claude/commands/**

@@ -459,3 +459,17 @@ actor LLMClient {
 8. **ToolChoice Encoding** (Responses API format)
 9. **Streaming Event Parsing** (event+data SSE pairs)
 10. **Edge Cases** (empty input, missing model)
+
+---
+
+## Claude Files
+
+Only the following Claude-related files belong in this repository:
+
+- **`CLAUDE.md`** — Project instructions loaded automatically into every Claude Code session.
+- **Claude skills** (`.claude/commands/` scripts) — Reusable slash commands scoped to this project.
+
+Do **not** commit:
+- Memory files or session state (e.g., `.claude/projects/` auto-memory)
+- Files containing personally identifiable information (names, API keys, email addresses, user paths)
+- Files that are only meaningful on a specific local machine (absolute paths, local config overrides)
