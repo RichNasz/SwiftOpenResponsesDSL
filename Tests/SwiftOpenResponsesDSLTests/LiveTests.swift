@@ -298,6 +298,55 @@ struct LiveTests {
 		#expect(hasToolResult)
 	}
 
+	@Test func toolSessionRunUsageAggregation() async throws {
+		let timeTool = FunctionToolParam(
+			name: "get_current_time",
+			description: "Returns the current time",
+			parameters: .object(properties: [:], required: [])
+		)
+		let timeHandler: ToolSession.ToolHandler = { _ in "12:00 PM" }
+
+		let session = ToolSession(
+			client: client,
+			tools: [timeTool],
+			maxIterations: 10,
+			handlers: ["get_current_time": timeHandler]
+		)
+
+		let result = try await session.run(
+			model: LiveTestConfig.model,
+			input: [User("What time is it right now? You MUST use the get_current_time tool.")],
+			configParams: [try RequestTimeout(240)]
+		)
+
+		#expect(result.iterationUsages.isEmpty == false)
+		#expect(result.totalUsage != nil)
+		#expect(result.totalUsage!.totalTokens > 0)
+	}
+
+	@Test func agentSendUsage() async throws {
+		let timeTool = FunctionToolParam(
+			name: "get_current_time",
+			description: "Returns the current time",
+			parameters: .object(properties: [:], required: [])
+		)
+		let timeHandler: ToolSession.ToolHandler = { _ in "12:00 PM" }
+
+		let agent = Agent(
+			client: client,
+			model: LiveTestConfig.model,
+			tools: [timeTool],
+			toolHandlers: ["get_current_time": timeHandler],
+			config: [try RequestTimeout(240)]
+		)
+
+		_ = try await agent.send("What time is it? Use the get_current_time tool.")
+
+		let usage = await agent.lastUsage
+		#expect(usage != nil)
+		#expect(usage!.totalTokens > 0)
+	}
+
 	@Test func maxOutputTokens() async throws {
 		let request = try ResponseRequest(
 			model: LiveTestConfig.model,

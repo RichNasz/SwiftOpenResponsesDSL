@@ -83,11 +83,17 @@ public actor Agent {
 	private let configParams: [ResponseConfigParameter]
 	private let maxToolIterations: Int
 	private var _lastResponseId: String?
+	private var _lastUsage: ResponseObject.Usage?
 	private var _transcript: [TranscriptEntry] = []
 
 	/// The ID of the last response, used for conversation continuity.
 	public var lastResponseId: String? {
 		_lastResponseId
+	}
+
+	/// The token usage from the last response (or aggregated across tool-calling iterations).
+	public var lastUsage: ResponseObject.Usage? {
+		_lastUsage
 	}
 
 	/// The debugging transcript of all agent activity.
@@ -223,6 +229,7 @@ public actor Agent {
 			let response = try await client.send(request)
 			let content = response.firstOutputText ?? ""
 			_lastResponseId = response.id
+			_lastUsage = response.usage
 			_transcript.append(.assistantMessage(content))
 			return content
 		}
@@ -259,6 +266,7 @@ public actor Agent {
 
 		let content = result.response.firstOutputText ?? ""
 		_lastResponseId = result.response.id
+		_lastUsage = result.response.usage
 		_transcript.append(.assistantMessage(content))
 		return content
 	}
@@ -339,6 +347,8 @@ public actor Agent {
 								textAccumulator += delta
 							case .llm(.responseCompleted(let response)):
 								self.updateLastResponseId(response.id)
+							case .usageUpdate(let usage, _):
+								self.updateLastUsage(usage)
 							case .toolCallStarted(_, let name, let arguments):
 								self.appendTranscriptEntry(.toolCall(name: name, arguments: arguments))
 							case .toolCallCompleted(_, let name, let output, let duration):
@@ -366,6 +376,10 @@ public actor Agent {
 		_lastResponseId = id
 	}
 
+	private func updateLastUsage(_ usage: ResponseObject.Usage) {
+		_lastUsage = usage
+	}
+
 	private func appendTranscriptEntry(_ entry: TranscriptEntry) {
 		_transcript.append(entry)
 	}
@@ -373,6 +387,7 @@ public actor Agent {
 	/// Resets the agent's conversation state and transcript.
 	public func reset() {
 		_lastResponseId = nil
+		_lastUsage = nil
 		_transcript.removeAll()
 	}
 }

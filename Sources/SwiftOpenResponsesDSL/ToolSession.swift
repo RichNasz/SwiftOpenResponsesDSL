@@ -62,6 +62,8 @@ public enum ToolSessionEvent: Sendable {
 	case toolCallStarted(callId: String, name: String, arguments: String)
 	/// Emitted after a tool handler returns.
 	case toolCallCompleted(callId: String, name: String, output: String, duration: Duration)
+	/// Emitted after each LLM response completes, when usage data is present (1-indexed iteration).
+	case usageUpdate(ResponseObject.Usage, iteration: Int)
 }
 
 // MARK: - Tool Session
@@ -79,6 +81,17 @@ public struct ToolSessionResult: Sendable {
 	public let response: ResponseObject
 	public let iterations: Int
 	public let log: [ToolCallLogEntry]
+	/// Token usage for each LLM call, in order (one entry per iteration).
+	public let iterationUsages: [ResponseObject.Usage]
+
+	/// Sum of all iteration usages, or nil if no response included usage data.
+	public var totalUsage: ResponseObject.Usage? {
+		guard !iterationUsages.isEmpty else { return nil }
+		let input  = iterationUsages.reduce(0) { $0 + $1.inputTokens }
+		let output = iterationUsages.reduce(0) { $0 + $1.outputTokens }
+		let total  = iterationUsages.reduce(0) { $0 + $1.totalTokens }
+		return ResponseObject.Usage(inputTokens: input, outputTokens: output, totalTokens: total)
+	}
 }
 
 /// Orchestrates the tool-calling loop using `previous_response_id` for conversation continuity.
@@ -170,6 +183,7 @@ public struct ToolSession: Sendable {
 		configParams: [ResponseConfigParameter]
 	) async throws -> ToolSessionResult {
 		var allLog: [ToolCallLogEntry] = []
+		var allUsages: [ResponseObject.Usage] = []
 		var iterations = 0
 
 		// Build and send initial request
@@ -181,6 +195,7 @@ public struct ToolSession: Sendable {
 		}
 
 		var response = try await client.send(request)
+		if let u = response.usage { allUsages.append(u) }
 
 		while iterations < maxIterations {
 			guard response.requiresToolExecution,
@@ -188,7 +203,8 @@ public struct ToolSession: Sendable {
 				return ToolSessionResult(
 					response: response,
 					iterations: iterations,
-					log: allLog
+					log: allLog,
+					iterationUsages: allUsages
 				)
 			}
 
@@ -253,6 +269,7 @@ public struct ToolSession: Sendable {
 			}
 
 			response = try await client.send(nextRequest)
+			if let u = response.usage { allUsages.append(u) }
 			iterations += 1
 		}
 
@@ -298,6 +315,7 @@ public struct ToolSession: Sendable {
 						// Stream the LLM response, collecting function calls
 						var functionCalls: [FunctionCallItem] = []
 						var completedResponseId: String? = nil
+						var completedUsage: ResponseObject.Usage? = nil
 
 						for try await event in client.stream(request) {
 							continuation.yield(.llm(event))
@@ -308,9 +326,14 @@ public struct ToolSession: Sendable {
 								}
 							case .responseCompleted(let response):
 								completedResponseId = response.id
+								completedUsage = response.usage
 							default:
 								break
 							}
+						}
+
+						if let usage = completedUsage {
+							continuation.yield(.usageUpdate(usage, iteration: iteration + 1))
 						}
 
 						// No function calls — final response, done

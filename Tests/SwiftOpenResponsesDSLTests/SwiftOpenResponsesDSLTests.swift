@@ -701,6 +701,53 @@ import Testing
 	}
 }
 
+@Test func testToolSessionEventUsageUpdate() {
+	let usage = ResponseObject.Usage(inputTokens: 100, outputTokens: 50, totalTokens: 150)
+	let event = ToolSessionEvent.usageUpdate(usage, iteration: 2)
+
+	if case .usageUpdate(let u, let iteration) = event {
+		#expect(u.inputTokens == 100)
+		#expect(u.outputTokens == 50)
+		#expect(u.totalTokens == 150)
+		#expect(iteration == 2)
+	} else {
+		Issue.record("Expected usageUpdate case")
+	}
+}
+
+@Test func testToolSessionResultTotalUsage() throws {
+	let jsonString = """
+	{
+		"id": "resp_1", "object": "response", "created_at": 1700000000,
+		"model": "gpt-4o", "output": [], "status": "completed"
+	}
+	"""
+	let response = try JSONDecoder().decode(ResponseObject.self, from: Data(jsonString.utf8))
+	let usage1 = ResponseObject.Usage(inputTokens: 10, outputTokens: 5, totalTokens: 15)
+	let usage2 = ResponseObject.Usage(inputTokens: 20, outputTokens: 10, totalTokens: 30)
+
+	let result = ToolSessionResult(response: response, iterations: 2, log: [], iterationUsages: [usage1, usage2])
+
+	let total = result.totalUsage
+	#expect(total != nil)
+	#expect(total!.inputTokens == 30)
+	#expect(total!.outputTokens == 15)
+	#expect(total!.totalTokens == 45)
+}
+
+@Test func testToolSessionResultTotalUsageEmpty() throws {
+	let jsonString = """
+	{
+		"id": "resp_1", "object": "response", "created_at": 1700000000,
+		"model": "gpt-4o", "output": [], "status": "completed"
+	}
+	"""
+	let response = try JSONDecoder().decode(ResponseObject.self, from: Data(jsonString.utf8))
+
+	let result = ToolSessionResult(response: response, iterations: 1, log: [], iterationUsages: [])
+	#expect(result.totalUsage == nil)
+}
+
 @Test func testToolSessionEventLLMWrapper() throws {
 	let jsonString = """
 	{
