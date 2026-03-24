@@ -182,6 +182,37 @@ print(reply)
 - macOS 13.0+ / iOS 16.0+
 - Depends on [SwiftLLMToolMacros](https://github.com/RichNasz/SwiftLLMToolMacros) 0.1.1+ for JSON Schema types and `@LLMTool` macro support
 
+## Agent Skill
+
+This project includes an [Agent Skill](https://agentskills.io) for AI coding assistants. Skills are optional — the package works the same without them. Skills are only useful if you use an agent that implements the [agentskills.io](https://agentskills.io) specification (Claude Code, Cursor, Gemini CLI, etc.).
+
+| Skill | Role | Path |
+|---|---|---|
+| `using-swift-open-responses-dsl` | Reference: ToolSession, Agent, AgentTool, continuity, streaming, error handling | [`skills/using-swift-open-responses-dsl/SKILL.md`](skills/using-swift-open-responses-dsl/SKILL.md) |
+
+The macro skills from [SwiftLLMToolMacros](https://github.com/RichNasz/SwiftLLMToolMacros) are also relevant when defining tools:
+
+| Skill | Role |
+|---|---|
+| `using-swift-llm-tool-macros` | Reference: macro API, type mapping, constraints, pitfalls |
+| `design-llm-tool` | Process: step-by-step workflow for designing a tool from a description |
+
+### Installing the Skills
+
+Adding SwiftOpenResponsesDSL as an SPM dependency does **not** make the skills available to your agent. Install by copying the skill folders into a location your agent is configured to discover:
+
+```bash
+# DSL skill (from this package)
+cp -r .build/checkouts/SwiftOpenResponsesDSL/skills/using-swift-open-responses-dsl \
+      skills/using-swift-open-responses-dsl
+
+# Macro skills (from SwiftLLMToolMacros)
+cp -r .build/checkouts/SwiftLLMToolMacros/skills/using-swift-llm-tool-macros \
+      skills/using-swift-llm-tool-macros
+cp -r .build/checkouts/SwiftLLMToolMacros/skills/design-llm-tool \
+      skills/design-llm-tool
+```
+
 ## License
 
 SwiftOpenResponsesDSL is available under the Apache License 2.0. See [LICENSE](LICENSE) for details.
