@@ -151,6 +151,7 @@ Use `SwiftLLMToolMacros` to define tools with zero boilerplate. The `@LLMTool` m
 import SwiftOpenResponsesDSL
 import SwiftLLMToolMacros
 
+/// Get the current weather for a location.
 @LLMTool
 struct GetCurrentWeather {
     @LLMToolArguments
@@ -162,7 +163,7 @@ struct GetCurrentWeather {
     }
 
     func call(arguments: Arguments) async throws -> ToolOutput {
-        let temp = unit == "celsius" ? "22°C" : "72°F"
+        let temp = arguments.unit == "celsius" ? "22°C" : "72°F"
         return ToolOutput(content: "{\"temperature\": \"\(temp)\"}")
     }
 }
@@ -184,11 +185,12 @@ print(reply)
 
 ## Agent Skill
 
-This project includes an [Agent Skill](https://agentskills.io) for AI coding assistants. Skills are optional — the package works the same without them. Skills are only useful if you use an agent that implements the [agentskills.io](https://agentskills.io) specification (Claude Code, Cursor, Gemini CLI, etc.).
+This project includes [Agent Skills](https://agentskills.io) for AI coding assistants. Skills are optional — the package works the same without them. Skills are only useful if you use an agent that implements the [agentskills.io](https://agentskills.io) specification (Claude Code, Cursor, Gemini CLI, etc.).
 
 | Skill | Role | Path |
 |---|---|---|
-| `using-swift-open-responses-dsl` | Reference: ToolSession, Agent, AgentTool, continuity, streaming, error handling | [`skills/using-swift-open-responses-dsl/SKILL.md`](skills/using-swift-open-responses-dsl/SKILL.md) |
+| `using-swift-open-responses-dsl` | Reference: API surface, config params, tool calling, streaming, reasoning, errors | [`skills/using-swift-open-responses-dsl/SKILL.md`](skills/using-swift-open-responses-dsl/SKILL.md) |
+| `design-responses-app` | Process: step-by-step workflow for designing an app from requirements | [`skills/design-responses-app/SKILL.md`](skills/design-responses-app/SKILL.md) |
 
 The macro skills from [SwiftLLMToolMacros](https://github.com/RichNasz/SwiftLLMToolMacros) are also relevant when defining tools:
 
@@ -199,19 +201,66 @@ The macro skills from [SwiftLLMToolMacros](https://github.com/RichNasz/SwiftLLMT
 
 ### Installing the Skills
 
-Adding SwiftOpenResponsesDSL as an SPM dependency does **not** make the skills available to your agent. Install by copying the skill folders into a location your agent is configured to discover:
+Adding SwiftOpenResponsesDSL as an SPM dependency does **not** make the skills available to your agent — SPM downloads sources into `.build/checkouts/`, which agents don't scan. You need to copy the skill folders into your project so your agent can discover them.
+
+**Step 1:** Resolve packages (if not already done):
 
 ```bash
-# DSL skill (from this package)
+swift package resolve
+```
+
+**Step 2:** Copy all four skills into your project's `skills/` directory:
+
+```bash
+mkdir -p skills
+
+# DSL skills (from this package)
 cp -r .build/checkouts/SwiftOpenResponsesDSL/skills/using-swift-open-responses-dsl \
       skills/using-swift-open-responses-dsl
+cp -r .build/checkouts/SwiftOpenResponsesDSL/skills/design-responses-app \
+      skills/design-responses-app
 
-# Macro skills (from SwiftLLMToolMacros)
+# Macro skills (from the SwiftLLMToolMacros dependency)
 cp -r .build/checkouts/SwiftLLMToolMacros/skills/using-swift-llm-tool-macros \
       skills/using-swift-llm-tool-macros
 cp -r .build/checkouts/SwiftLLMToolMacros/skills/design-llm-tool \
       skills/design-llm-tool
 ```
+
+This installs all four complementary skills:
+
+| Skill | Package | Role |
+|---|---|---|
+| `using-swift-open-responses-dsl` | SwiftOpenResponsesDSL | Reference: DSL API surface |
+| `design-responses-app` | SwiftOpenResponsesDSL | Process: designing an app |
+| `using-swift-llm-tool-macros` | SwiftLLMToolMacros | Reference: macro API surface |
+| `design-llm-tool` | SwiftLLMToolMacros | Process: designing a tool struct |
+
+Install all four for the best experience, or pick only the ones relevant to your workflow.
+
+### Using Skills with Claude Code
+
+[Claude Code](https://claude.ai/code) automatically discovers skills from a `skills/` directory at your project root. After copying the skill folders (see above), Claude Code will load them when they match your task context.
+
+You can also invoke a skill directly during a conversation:
+
+```
+/skill using-swift-open-responses-dsl
+/skill design-responses-app
+```
+
+To verify skills are available, ask Claude Code: *"What skills do you have for SwiftOpenResponsesDSL?"*
+
+**Tip:** If you are working in a monorepo or the skills are installed in a non-standard location, you can reference them from your project's `CLAUDE.md`:
+
+```markdown
+## Skills
+See `path/to/skills/` for Agent Skills that provide SwiftOpenResponsesDSL and SwiftLLMToolMacros API knowledge.
+```
+
+### Spec-Driven Development
+
+If you use an AI coding agent, consider writing WHAT and HOW specs before generating code. See [docs/SpecDrivenDevelopment.md](docs/SpecDrivenDevelopment.md) for the workflow guide and [Examples/Specs/](Examples/Specs/) for sample specs.
 
 ## License
 
