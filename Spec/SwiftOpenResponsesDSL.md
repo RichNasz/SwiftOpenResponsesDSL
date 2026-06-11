@@ -104,6 +104,8 @@ For tool calling and agent capabilities, see [ToolCalling.md](ToolCalling.md) an
       case inputImage(url: String, detail: String?)
   }
   ```
+  - `inputText` encodes as `{"type": "input_text", "text": "..."}`
+  - `inputImage` encodes as `{"type": "input_image", "image_url": "<url>", "detail": "<detail>"}` — `image_url` is a flat string (URL or base64 data URI), `detail` is an optional sibling field (`"low"`, `"high"`, or `"auto"`)
 
 - **FunctionCallOutputItem**: Result of a function call.
   ```swift
@@ -234,6 +236,7 @@ Each implementing `ResponseConfigParameter`:
 - **Background**: `init(_ value: Bool)` — sets `request.background` (use background execution mode)
 - **MaxToolCalls**: `init(_ value: Int) throws` — validates >0, sets `request.maxToolCalls`
 - **TextConfig**: `init(_ value: TextParam)` — sets `request.text` (response format and verbosity)
+- **ToolChoiceParam**: `init(_ value: ToolChoice)` — sets `request.toolChoice` (controls model tool selection strategy)
 
 ### 5. Convenience Message Functions
 

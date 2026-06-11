@@ -120,7 +120,7 @@ Parser algorithm:
 - `definition.parameters` -> `parameters` (via JSONSchema typealias)
 - `type` defaults to `"function"`
 
-`AgentTool.init<T: LLMTool>(_ instance: T)`:
+`AgentTool.init<T: LLMTool>(_ instance: T, strict: Bool? = nil)`:
 1. Gets `T.toolDefinition`
-2. Creates a `FunctionToolParam` from the definition
+2. Creates a `FunctionToolParam` from the definition (passing `strict` through)
 3. Creates a handler closure that decodes arguments and calls `instance.call(arguments:)`

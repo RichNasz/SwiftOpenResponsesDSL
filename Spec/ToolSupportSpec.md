@@ -43,8 +43,8 @@ struct GetCurrentWeather {
 ```
 
 Bridged to core DSL types:
-- `AgentTool.init<T: LLMTool>(_ instance: T)`
-- `FunctionToolParam.init(from: ToolDefinition)`
+- `AgentTool.init<T: LLMTool>(_ instance: T, strict: Bool? = nil)`
+- `FunctionToolParam.init(from: ToolDefinition, strict: Bool? = nil)`
 
 ### Manual Tool Definition (JSONSchema)
 
@@ -189,9 +189,11 @@ The Open Responses API returns a `usage` object on every response containing thr
 
 ```swift
 struct ResponseObject.Usage: Sendable, Decodable {
-    let inputTokens: Int    // JSON: "input_tokens"
-    let outputTokens: Int   // JSON: "output_tokens"
-    let totalTokens: Int    // JSON: "total_tokens"
+    let inputTokens: Int                          // JSON: "input_tokens"
+    let outputTokens: Int                         // JSON: "output_tokens"
+    let totalTokens: Int                          // JSON: "total_tokens"
+    let outputTokensDetails: OutputTokensDetails? // JSON: "output_tokens_details"
+    let inputTokensDetails: InputTokensDetails?   // JSON: "input_tokens_details"
 }
 ```
 

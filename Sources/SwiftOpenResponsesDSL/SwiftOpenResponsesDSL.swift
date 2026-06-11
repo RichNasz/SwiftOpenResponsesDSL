@@ -138,16 +138,15 @@ extension InputContent: Encodable {
 }
 
 /// Individual content part within a structured message.
+///
+/// - `inputImage` encodes `image_url` as a flat string per the Open Responses spec
+///   (not a nested object). `detail` is an optional sibling field: `"low"`, `"high"`, or `"auto"`.
 public enum InputContentPart: Sendable, Encodable {
 	case inputText(String)
 	case inputImage(url: String, detail: String?)
 
 	private enum CodingKeys: String, CodingKey {
 		case type, text, image_url, detail
-	}
-
-	private enum ImageURLKeys: String, CodingKey {
-		case url, detail
 	}
 
 	public func encode(to encoder: Encoder) throws {
@@ -159,10 +158,9 @@ public enum InputContentPart: Sendable, Encodable {
 		case .inputImage(let url, let detail):
 			var container = encoder.container(keyedBy: CodingKeys.self)
 			try container.encode("input_image", forKey: .type)
-			var imageContainer = container.nestedContainer(keyedBy: ImageURLKeys.self, forKey: .image_url)
-			try imageContainer.encode(url, forKey: .url)
+			try container.encode(url, forKey: .image_url)
 			if let detail {
-				try imageContainer.encode(detail, forKey: .detail)
+				try container.encode(detail, forKey: .detail)
 			}
 		}
 	}

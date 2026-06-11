@@ -2,13 +2,13 @@
 
 ## Overview
 
-This specification defines the tool calling and agent orchestration types for SwiftOpenResponsesDSL. These additions enable the DSL to parse function calls from Responses API output, manage the tool-calling loop using `previous_response_id`, and provide a high-level agent abstraction for persistent conversations with tool use.
+This specification defines the tool calling and agent orchestration types for SwiftOpenResponsesDSL. These additions enable the DSL to parse function calls from Responses API output, manage the tool-calling loop by accumulating full conversation history across iterations, and provide a high-level agent abstraction for persistent conversations with tool use (using `previous_response_id` for continuity between turns).
 
 ### FunctionCallItem (output)
 Parsed function call from a non-streaming API response output.
 
 - **Fields**: `id: String`, `callId: String`, `name: String`, `arguments: String`, `status: String?`
-- **Conformance**: `Sendable`, `Decodable`
+- **Conformance**: `Sendable`, `Codable`
 - **decodeArguments()**: Generic helper to decode raw JSON arguments into typed Swift values:
   ```swift
   public func decodeArguments<T: Decodable>(_ type: T.Type = T.self) throws -> T
@@ -24,9 +24,9 @@ Result sent back to the model after executing a function call.
 ### ToolChoice (enum)
 Controls model tool selection behavior.
 
-- **Cases**: `auto`, `none`, `required`, `function(String)`
-- **Conformance**: `Sendable`, `Encodable`
-- **Encoding**: For the Responses API, `.function(name)` encodes as `{"type":"function","name":"..."}` (no nested function object — different from Chat Completions)
+- **Cases**: `auto`, `none`, `required`, `function(String)`, `allowedTools(mode: ToolChoiceMode, tools: [String])`
+- **Conformance**: `Sendable`, `Equatable`, `Encodable`
+- **Encoding**: For the Responses API, `.function(name)` encodes as `{"type":"function","name":"..."}` (no nested function object — different from Chat Completions). `.allowedTools` encodes as `{"type":"allowed_tools","mode":"...","tools":[{"type":"function","name":"..."},...]}`.
 
 ### ToolChoiceParam (struct)
 `ResponseConfigParameter` wrapper for `ToolChoice`.

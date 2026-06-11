@@ -72,7 +72,7 @@ let response = try await client.send(request)
 | `System("...")` | System message `InputItem` |
 | `Developer("...")` | Developer message `InputItem` |
 | `User("...")` | User message `InputItem` |
-| `UserImage("url", detail: "auto")` | User image `InputItem` |
+| `UserImage("url", detail: "auto")` | User image `InputItem` — `image_url` encodes as a flat string, `detail` (`"low"`, `"high"`, `"auto"`) is a sibling field |
 | `FunctionOutput(callId: "...", output: "...")` | Function call output `InputItem` |
 
 ## Configuration Parameters
