@@ -19,7 +19,7 @@ SwiftOpenResponsesDSL is an embedded Swift DSL for the [Open Responses API](http
 
 ### Design Patterns
 - **Result builders**: `@InputBuilder` for input items, `@ResponseConfigBuilder` for config, `@SessionBuilder` for mixed items+tools
-- **Actor-based client**: `LLMClient` is an actor for thread safety
+- **Actor-based client**: `LLMClient` is an actor for thread safety; supports `customHeaders` for proxy auth scenarios
 - **Protocol-based config**: `ResponseConfigParameter` protocol with `apply(to:)` method
 - **Polymorphic items**: `InputItem` and `OutputItem` enums with type discriminators
 

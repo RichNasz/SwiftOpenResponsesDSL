@@ -470,11 +470,13 @@ Each implementing `ResponseConfigParameter`:
 
 ```swift
 actor LLMClient {
-    init(baseURL: String, apiKey: String, sessionConfiguration: URLSessionConfiguration = .default) throws
+    init(baseURL: String, apiKey: String, customHeaders: [String: String] = [:],
+         sessionConfiguration: URLSessionConfiguration = .default) throws
     func send(_ request: ResponseRequest) async throws -> ResponseObject
     nonisolated func stream(_ request: ResponseRequest) -> AsyncThrowingStream<StreamEvent, Error>
 }
 ```
+- `customHeaders`: Additional HTTP headers applied to every request after the default `Authorization: Bearer` header, so a custom `Authorization` value will override the default Bearer token (e.g., for proxy auth scenarios).
 - `send`: Non-streaming POST request.
 - `stream`: Returns `AsyncThrowingStream<StreamEvent, Error>` for SSE streaming. Parses `event:` + `data:` pairs.
 

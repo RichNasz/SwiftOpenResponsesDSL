@@ -1431,20 +1431,24 @@ public enum StreamEvent: Sendable {
 public actor LLMClient {
 	private let baseURL: URL
 	private let apiKey: String
+	private let customHeaders: [String: String]
 	private let session: URLSession
 
 	/// Creates a new LLMClient.
 	/// - Parameters:
 	///   - baseURL: Complete endpoint URL (e.g., "https://api.openai.com/v1/responses")
 	///   - apiKey: API key for authentication
+	///   - customHeaders: Additional HTTP headers applied to every request after the default
+	///     Authorization header, so a custom `Authorization` value will override the default Bearer token.
 	///   - sessionConfiguration: URLSession configuration (defaults to .default)
 	/// - Throws: `LLMError.missingBaseURL` if URL is empty or invalid
-	public init(baseURL: String, apiKey: String, sessionConfiguration: URLSessionConfiguration = .default) throws {
+	public init(baseURL: String, apiKey: String, customHeaders: [String: String] = [:], sessionConfiguration: URLSessionConfiguration = .default) throws {
 		guard !baseURL.isEmpty, let url = URL(string: baseURL) else {
 			throw LLMError.missingBaseURL
 		}
 		self.baseURL = url
 		self.apiKey = apiKey
+		self.customHeaders = customHeaders
 		self.session = URLSession(configuration: sessionConfiguration)
 	}
 
@@ -1454,6 +1458,9 @@ public actor LLMClient {
 		urlRequest.httpMethod = "POST"
 		urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
 		urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+		for (field, value) in customHeaders {
+			urlRequest.setValue(value, forHTTPHeaderField: field)
+		}
 
 		if let timeout = request.requestTimeout {
 			urlRequest.timeoutInterval = timeout
@@ -1498,11 +1505,14 @@ public actor LLMClient {
 	/// Streams a request and returns an async stream of semantic events.
 	nonisolated public func stream(_ request: ResponseRequest) -> AsyncThrowingStream<StreamEvent, Error> {
 		AsyncThrowingStream { continuation in
-			let task = Task { [baseURL, apiKey, session] in
+			let task = Task { [baseURL, apiKey, customHeaders, session] in
 				var urlRequest = URLRequest(url: baseURL)
 				urlRequest.httpMethod = "POST"
 				urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
 				urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+				for (field, value) in customHeaders {
+					urlRequest.setValue(value, forHTTPHeaderField: field)
+				}
 
 				if let timeout = request.requestTimeout {
 					urlRequest.timeoutInterval = timeout
