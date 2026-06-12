@@ -181,7 +181,7 @@ print(reply)
 
 - Swift 6.2+
 - macOS 13.0+ / iOS 16.0+
-- Depends on [SwiftLLMToolMacros](https://github.com/RichNasz/SwiftLLMToolMacros) 0.1.1+ for JSON Schema types and `@LLMTool` macro support
+- Depends on [SwiftLLMToolMacros](https://github.com/RichNasz/SwiftLLMToolMacros) 0.2.0+ for JSON Schema types and `@LLMTool` macro support
 
 ## Agent Skill
 
