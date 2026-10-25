@@ -649,6 +649,7 @@ actor LLMClient {
 9. **Streaming Event Parsing** (event+data SSE pairs)
 10. **Edge Cases** (empty input, missing model)
 11. **Text inference** (Open Responses 2026-04-24): encode `top_logprobs`, `safety_identifier`, `prompt_cache_key`, `stream_options`, and JSON Schema `description`; encode `Assistant` with `phase` and `output_text`; decode output `logprobs`, assistant `phase`, and `status: queued`; decode the optional text-generation fields on `ResponseObject`; parse each new text stream event, including both yields for `response.output_text.delta` and the `error` payload fallback.
+12. **Live server tests**: `Spec/LiveTesting.md`. `swift test` runs them against a local server. The default base URL is `http://127.0.0.1:1234` and the default model is `openai/gpt-oss-20b`. The suite is skipped only when that server does not answer.
 
 ---
 

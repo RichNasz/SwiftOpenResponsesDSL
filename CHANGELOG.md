@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 
 - Text inference fields from Open Responses 2026-04-24: `top_logprobs`, `safety_identifier`, `prompt_cache_key`, `stream_options`, assistant message `phase`, output-text logprobs, and the text streaming events (`output_text.done`, refusal, annotation, reasoning text, reasoning summary text).
+- Live tests call the implemented API against a local server. The default model is `openai/gpt-oss-20b` at `http://127.0.0.1:1234`.
 
 ## [0.2.0] - 2026-06-12
 
