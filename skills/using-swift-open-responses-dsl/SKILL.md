@@ -47,7 +47,10 @@ let client = try LLMClient(
     baseURL: "https://api.openai.com/v1/responses",
     apiKey: "your-api-key"
 )
+await client.prewarm()
 ```
+
+`prewarm` sends `GET` on this client's session and returns after the request starts. It does not generate. Open Responses has no prewarm operation. The timeout is 5 seconds. Failures are ignored. A custom `Authorization` header overrides the bearer token, same as `send`.
 
 ## Basic Request
 
@@ -73,6 +76,7 @@ let response = try await client.send(request)
 | `Developer("...")` | Developer message `InputItem` |
 | `User("...")` | User message `InputItem` |
 | `UserImage("url", detail: "auto")` | User image `InputItem` — `image_url` encodes as a flat string, `detail` (`"low"`, `"high"`, `"auto"`) is a sibling field |
+| `UserFile(filename: "notes.txt", fileData: "aGVsbG8=", fileURL: "https://example.com/notes.txt")` | User file `InputItem` — `input_file` with `filename`, `file_data` (base64), and `file_url`. Nil fields are omitted |
 | `FunctionOutput(callId: "...", output: "...")` | Function call output `InputItem` |
 | `Assistant("...", phase: .finalAnswer, id: "msg_1")` | Assistant message with one `output_text` part and `phase` (`commentary` or `final_answer`). Resend `phase` on later turns. |
 
@@ -441,4 +445,4 @@ do {
 
 This skill covers SwiftOpenResponsesDSL wiring only. For designing `@LLMTool` structs, consult the `using-swift-llm-tool-macros` and `design-llm-tool` skills. For the Chat Completions API, consult the `using-swift-chat-completions-dsl` skill.
 
-The package does not cover every Open Responses surface. WebSocket transport, `POST /v1/responses/compact`, file and video input, reasoning-item round-trip, and non-string tool output are not implemented. Unknown output item types fail decoding and are not ignored. `client.stream` is HTTP SSE. See `Spec/Unimplemented.md`. Do not open a socket, send a compaction item, or attach a file, video, or non-string tool result.
+The package does not cover every Open Responses surface. WebSocket transport, `POST /v1/responses/compact`, video input, reasoning-item round-trip, and non-string tool output are not implemented. Unknown output item types fail decoding and are not ignored. `client.stream` is HTTP SSE. See `Spec/Unimplemented.md`. Do not open a socket, send a compaction item, or attach a video or non-string tool result. File input is `UserFile`. An output message part of type `input_file` still fails decoding.

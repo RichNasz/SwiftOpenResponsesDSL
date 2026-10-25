@@ -265,4 +265,4 @@ print(followUp)
 
 This skill covers SwiftOpenResponsesDSL application design only. For designing `@LLMTool` structs (arguments, types, constraints), consult the `design-llm-tool` skill. For macro API reference, consult the `using-swift-llm-tool-macros` skill.
 
-Streaming means HTTP SSE through `stream`. The package does not cover every Open Responses surface. WebSocket transport, `POST /v1/responses/compact`, file and video input, reasoning-item round-trip, and non-string tool output are not implemented. Unknown output item types fail decoding and are not ignored. See `Spec/Unimplemented.md`. When a design needs a shorter context window, send a shorter `input`.
+Streaming means HTTP SSE through `stream`. The package does not cover every Open Responses surface. WebSocket transport, `POST /v1/responses/compact`, video input, reasoning-item round-trip, and non-string tool output are not implemented. Unknown output item types fail decoding and are not ignored. See `Spec/Unimplemented.md`. File input is `UserFile` in the reference skill. When a design needs a shorter context window, send a shorter `input`.

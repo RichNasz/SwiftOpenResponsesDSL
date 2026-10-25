@@ -199,6 +199,56 @@ import Testing
 	)
 }
 
+@Test func testPrewarmUsesClientSession() async throws {
+	let config = URLSessionConfiguration.ephemeral
+	config.protocolClasses = [WarmRequestCapture.self]
+	WarmRequestCapture.reset()
+
+	let client = try LLMClient(
+		baseURL: "http://127.0.0.1:9/v1/responses",
+		apiKey: "sk-test",
+		customHeaders: ["X-Live": "1", "Authorization": "Bearer override"],
+		sessionConfiguration: config
+	)
+
+	await client.prewarm()
+
+	let request = await WarmRequestCapture.waitForRequest()
+	#expect(request?.httpMethod == "GET")
+	#expect(request?.url?.absoluteString == "http://127.0.0.1:9/v1/responses")
+	#expect(request?.timeoutInterval == 5)
+	#expect(request?.httpBody == nil)
+	#expect(request?.value(forHTTPHeaderField: "Authorization") == "Bearer override")
+	#expect(request?.value(forHTTPHeaderField: "X-Live") == "1")
+	#expect(request?.value(forHTTPHeaderField: "Content-Type") == nil)
+}
+
+@Test func testPrewarmReturnsWithoutBlocking() async throws {
+	let config = URLSessionConfiguration.ephemeral
+	config.protocolClasses = [WarmRequestHang.self]
+	let client = try LLMClient(
+		baseURL: "http://192.0.2.1/v1/responses",
+		apiKey: "sk-test",
+		sessionConfiguration: config
+	)
+
+	let finished = await withTaskGroup(of: Bool.self) { group in
+		group.addTask {
+			await client.prewarm()
+			await client.prewarm()
+			return true
+		}
+		group.addTask {
+			try? await Task.sleep(for: .milliseconds(500))
+			return false
+		}
+		let first = await group.next() ?? false
+		group.cancelAll()
+		return first
+	}
+	#expect(finished)
+}
+
 // MARK: - JSON Encoding Tests
 
 @Test func testResponseRequestEncoding() throws {
@@ -264,6 +314,33 @@ import Testing
 	#expect(json?["type"] as? String == "message")
 	#expect(json?["role"] as? String == "developer")
 	#expect(json?["content"] as? String == "Follow rules.")
+}
+
+@Test func testUserFileEncoding() throws {
+	let item = UserFile(filename: "notes.txt", fileData: "aGVsbG8=", fileURL: "https://example.com/notes.txt")
+	let encoder = JSONEncoder()
+	let data = try encoder.encode(item)
+	let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+	let parts = json?["content"] as? [[String: Any]]
+
+	#expect(json?["role"] as? String == "user")
+	#expect(parts?.count == 1)
+	#expect(parts?.first?["type"] as? String == "input_file")
+	#expect(parts?.first?["filename"] as? String == "notes.txt")
+	#expect(parts?.first?["file_data"] as? String == "aGVsbG8=")
+	#expect(parts?.first?["file_url"] as? String == "https://example.com/notes.txt")
+}
+
+@Test func testUserFileOmitsUnsetFields() throws {
+	let item = UserFile(fileURL: "https://example.com/notes.txt")
+	let data = try JSONEncoder().encode(item)
+	let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+	let part = (json?["content"] as? [[String: Any]])?.first
+
+	#expect(part?["type"] as? String == "input_file")
+	#expect(part?["file_url"] as? String == "https://example.com/notes.txt")
+	#expect(part?["filename"] == nil)
+	#expect(part?["file_data"] == nil)
 }
 
 @Test func testItemReferenceEncoding() throws {
@@ -1158,4 +1235,61 @@ import Testing
 	} else {
 		Issue.record("Expected raw error fallback")
 	}
+}
+
+private final class WarmRequestCapture: URLProtocol, @unchecked Sendable {
+	private static let lock = NSLock()
+	nonisolated(unsafe) private static var captured: URLRequest?
+
+	static func reset() {
+		lock.withLock { captured = nil }
+	}
+
+	static func waitForRequest() async -> URLRequest? {
+		for _ in 0..<20 {
+			let request = lock.withLock { captured }
+			if let request {
+				return request
+			}
+			try? await Task.sleep(for: .milliseconds(50))
+		}
+		return nil
+	}
+
+	override class func canInit(with request: URLRequest) -> Bool { true }
+
+	override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+	override func startLoading() {
+		Self.lock.withLock { Self.captured = request }
+		guard let url = request.url,
+			let response = HTTPURLResponse(url: url, statusCode: 204, httpVersion: "HTTP/1.1", headerFields: nil) else {
+			client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+			return
+		}
+		client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+		client?.urlProtocolDidFinishLoading(self)
+	}
+
+	override func stopLoading() {}
+}
+
+private final class WarmRequestHang: URLProtocol, @unchecked Sendable {
+	override class func canInit(with request: URLRequest) -> Bool { true }
+
+	override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+	override func startLoading() {
+		let client = client
+		guard let url = request.url else { return }
+		DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
+			guard let response = HTTPURLResponse(url: url, statusCode: 204, httpVersion: "HTTP/1.1", headerFields: nil) else {
+				return
+			}
+			client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+			client?.urlProtocolDidFinishLoading(self)
+		}
+	}
+
+	override func stopLoading() {}
 }

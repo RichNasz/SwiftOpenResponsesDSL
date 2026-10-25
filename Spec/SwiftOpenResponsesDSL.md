@@ -64,14 +64,15 @@ Optional, implemented, and safe for a server to omit or ignore:
 - `logprobs` on output text and on `response.output_text.delta` / `response.output_text.done` is optional as of 2026-04-24. A missing array decodes as `nil`. An empty array is valid. `top_logprobs` and `include: ["message.output_text.logprobs"]` are optional request fields.
 - Every other configuration parameter is optional on the request: sampling (`temperature`, `top_p`, `frequency_penalty`, `presence_penalty`), `truncation`, `service_tier`, `reasoning`, `store`, `background`, `max_output_tokens`, `max_tool_calls`, `text` (including JSON format and schema `description`), `stream_options`, `safety_identifier`, `prompt_cache_key`, `metadata`, `tools`, `tool_choice`, `previous_response_id`, `instructions`, and `parallel_tool_calls`. The client sends a field only when the caller sets it. A non-nil echo must match. A nil echo is allowed.
 - `id` and `status` on an input message, and `detail` on `input_image`, are optional.
-- Tools, image input, and reasoning are in the shared item model. A given model may still reject them with HTTP 400. The live suite allows `serverError` for vision and for object `tool_choice`.
+- `filename`, `file_data`, and `file_url` on `input_file` are optional. The client encodes each only when the caller sets it. `file_data` is a base64 string. Open Responses limits that string to 33554432 characters. This client does not enforce the limit.
+- Tools, image input, file input, and reasoning are in the shared item model. A given model may still reject them with HTTP 400. The live suite allows `serverError` for vision and for object `tool_choice`.
 - Provider extension item types and extra fields are optional. The specification says portable clients ignore them. Unknown keys on a type this client decodes are ignored. Unknown output item types are not: decoding `output` throws. An output message content part other than `output_text` or `refusal` also throws. See [Decoded narrowly](Unimplemented.md#decoded-narrowly).
 
 Optional, and not implemented. The inventory is [`Unimplemented.md`](Unimplemented.md):
 
 - WebSocket transport. The specification says servers MAY expose `/v1/responses` as a socket. HTTP remains the required transport for a Responses call.
 - `POST /v1/responses/compact` and the compaction item. The specification adds them as a separate context-compression endpoint. It does not say every Responses server MUST offer them. The required create-response exchange does not include them.
-- File input, video input, a reasoning item sent back as input, assistant refusal content on input, citations on resent assistant text, and a tool result that is not a string.
+- Video input, a reasoning item sent back as input, assistant refusal content on input, citations on resent assistant text, and a tool result that is not a string. File input is encoded. See `InputContentPart.inputFile`. An output message part of type `input_file` still fails decoding. See [Decoded narrowly](Unimplemented.md#decoded-narrowly).
 
 ---
 
@@ -166,11 +167,13 @@ Optional, and not implemented. The inventory is [`Unimplemented.md`](Unimplement
       case inputText(String)
       case outputText(String)
       case inputImage(url: String, detail: String?)
+      case inputFile(filename: String?, fileData: String?, fileURL: String?)
   }
   ```
   - `inputText` encodes as `{"type": "input_text", "text": "..."}`
   - `outputText` encodes as `{"type": "output_text", "text": "..."}` and is the content part used when resending assistant text
   - `inputImage` encodes as `{"type": "input_image", "image_url": "<url>", "detail": "<detail>"}` — `image_url` is a flat string (URL or base64 data URI), `detail` is an optional sibling field (`"low"`, `"high"`, or `"auto"`)
+  - `inputFile` encodes as `{"type": "input_file"}` plus any of `filename`, `file_data`, and `file_url` that are set. This is `InputFileContentParam`. A nil field is omitted. `file_data` is base64. The client does not check the 33554432-character limit. Decoding an `input_file` part on an output message is unchanged: it throws. See [Decoded narrowly](Unimplemented.md#decoded-narrowly).
 
 - **FunctionCallOutputItem**: Result of a function call.
   ```swift
@@ -332,6 +335,7 @@ Each implementing `ResponseConfigParameter`:
 - `Developer(_ content: String) -> InputItem` — creates `.message(InputMessage(role: .developer, content: .text(content)))`
 - `User(_ content: String) -> InputItem` — creates `.message(InputMessage(role: .user, content: .text(content)))`
 - `UserImage(_ url: String, detail: String? = nil) -> InputItem` — creates `.message(InputMessage(role: .user, content: .parts([.inputImage(url: url, detail: detail)])))`
+- `UserFile(filename: String? = nil, fileData: String? = nil, fileURL: String? = nil) -> InputItem` — creates `.message(InputMessage(role: .user, content: .parts([.inputFile(filename: filename, fileData: fileData, fileURL: fileURL)])))`
 - `FunctionOutput(callId: String, output: String) -> InputItem` — creates `.functionCallOutput(FunctionCallOutputItem(callId: callId, output: output))`
 - `Assistant(_ content: String, phase: AssistantPhase, id: String? = nil) -> InputItem` — creates an assistant message whose content is one `output_text` part, with `phase` set. Use this when resending assistant text on a later turn.
 
@@ -616,11 +620,13 @@ actor LLMClient {
          sessionConfiguration: URLSessionConfiguration = .default) throws
     func send(_ request: ResponseRequest) async throws -> ResponseObject
     nonisolated func stream(_ request: ResponseRequest) -> AsyncThrowingStream<StreamEvent, Error>
+    func prewarm()
 }
 ```
 - `customHeaders`: Additional HTTP headers applied to every request after the default `Authorization: Bearer` header, so a custom `Authorization` value will override the default Bearer token (e.g., for proxy auth scenarios).
 - `send`: Non-streaming POST request.
 - `stream`: Returns `AsyncThrowingStream<StreamEvent, Error>` for SSE streaming. Parses `event:` + `data:` pairs.
+- `prewarm`: Opens this client's `URLSession` to `baseURL` without generating. Open Responses has no prewarm operation, so this is not a package gap and it is not listed in [`Unimplemented.md`](Unimplemented.md). The call is `GET` with the same `Authorization` and `customHeaders` as `send`, no body, and `timeoutInterval` of 5 seconds. `await prewarm()` returns after that GET is started. It does not wait for the response. The GET runs off the actor, so `send` and `stream` are not blocked. Failures are ignored. The request uses the session from `init`, including `sessionConfiguration`.
 
 ## Usage Examples
 
@@ -697,9 +703,9 @@ actor LLMClient {
 2. **Invalid Parameter Validation** (boundary testing for all config params)
 3. **Request Encoding** (snake_case keys, optional fields, ResponseInput variants)
 4. **Response Decoding** (polymorphic OutputItem, Usage, error)
-5. **Item Type Encoding/Decoding** (InputItem, OutputItem polymorphism)
+5. **Item Type Encoding/Decoding** (InputItem, OutputItem polymorphism), including **file input**: `UserFile` / `inputFile` encode `type: input_file` and only the `filename`, `file_data`, and `file_url` values that are set
 6. **InputBuilder result builder**
-7. **LLMClient Init Validation**
+7. **LLMClient Init Validation**, and **connection warm**: `prewarm` returns in under a second, uses the client's session, sends `GET` with the same auth headers as `send`, and does not block a later call on the actor
 8. **ToolChoice Encoding** (Responses API format)
 9. **Streaming Event Parsing** (event+data SSE pairs)
 10. **Edge Cases** (empty input, missing model)

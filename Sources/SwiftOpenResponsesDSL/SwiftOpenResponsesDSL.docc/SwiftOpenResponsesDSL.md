@@ -14,7 +14,7 @@ Some of those fields are optional in the Open Responses specification. A server 
 
 `swift test` exercises the client against LM Studio at `http://127.0.0.1:1234` with model `openai/gpt-oss-20b`. That server answers and still skips part of the optional surface: it can omit `safety_identifier` and `prompt_cache_key`, rewrite `frequency_penalty` and `service_tier`, reject `item_reference` and object `tool_choice` with HTTP 400, ignore JSON `text.format`, return empty `logprobs`, and put reasoning on the completed response without reasoning deltas.
 
-Streaming examples in this documentation are HTTP server-sent events. The package does not cover every Open Responses surface. WebSocket transport, context compaction (`POST /v1/responses/compact`), file and video input, reasoning-item round-trip, and non-string tool output are not implemented. Unknown output item types fail decoding. They are not ignored. The inventory is [Spec/Unimplemented.md](../../../Spec/Unimplemented.md).
+Streaming examples in this documentation are HTTP server-sent events. The package does not cover every Open Responses surface. WebSocket transport, context compaction (`POST /v1/responses/compact`), video input, reasoning-item round-trip, and non-string tool output are not implemented. Unknown output item types fail decoding. They are not ignored. The inventory is [Spec/Unimplemented.md](../../../Spec/Unimplemented.md).
 
 ## Topics
 

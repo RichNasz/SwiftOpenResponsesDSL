@@ -160,13 +160,16 @@ extension InputContent: Encodable {
 ///
 /// - `inputImage` encodes `image_url` as a flat string per the Open Responses spec
 ///   (not a nested object). `detail` is an optional sibling field: `"low"`, `"high"`, or `"auto"`.
+/// - `inputFile` encodes `InputFileContentParam`. `filename`, `file_data`, and `file_url` are omitted when nil.
+///   `file_data` is base64. This client does not enforce the 33554432-character limit.
 public enum InputContentPart: Sendable, Encodable {
 	case inputText(String)
 	case outputText(String)
 	case inputImage(url: String, detail: String?)
+	case inputFile(filename: String?, fileData: String?, fileURL: String?)
 
 	private enum CodingKeys: String, CodingKey {
-		case type, text, image_url, detail
+		case type, text, image_url, detail, filename, file_data, file_url
 	}
 
 	public func encode(to encoder: Encoder) throws {
@@ -186,6 +189,12 @@ public enum InputContentPart: Sendable, Encodable {
 			if let detail {
 				try container.encode(detail, forKey: .detail)
 			}
+		case .inputFile(let filename, let fileData, let fileURL):
+			var container = encoder.container(keyedBy: CodingKeys.self)
+			try container.encode("input_file", forKey: .type)
+			try container.encodeIfPresent(filename, forKey: .filename)
+			try container.encodeIfPresent(fileData, forKey: .file_data)
+			try container.encodeIfPresent(fileURL, forKey: .file_url)
 		}
 	}
 }
@@ -591,6 +600,24 @@ public func User(_ content: String) -> InputItem {
 @inlinable
 public func UserImage(_ url: String, detail: String? = nil) -> InputItem {
 	.message(InputMessage(role: .user, content: .parts([.inputImage(url: url, detail: detail)])))
+}
+
+/// Creates a user file input item.
+///
+/// Encodes `InputFileContentParam` (`type: input_file`). Each of `filename`, `fileData`, and `fileURL` is omitted when nil.
+/// `fileData` is base64. Open Responses limits that string to 33554432 characters. This function does not check the length.
+/// An output message part of type `input_file` still fails decoding.
+///
+/// - Parameters:
+///   - filename: File name sent as `filename`.
+///   - fileData: Base64 file bytes sent as `file_data`.
+///   - fileURL: File URL sent as `file_url`.
+/// - Returns: An ``InputItem`` user message with one file part.
+@inlinable
+public func UserFile(filename: String? = nil, fileData: String? = nil, fileURL: String? = nil) -> InputItem {
+	.message(InputMessage(role: .user, content: .parts([
+		.inputFile(filename: filename, fileData: fileData, fileURL: fileURL)
+	])))
 }
 
 /// Creates a function call output input item.
@@ -1701,6 +1728,7 @@ public enum StreamEvent: Sendable {
 /// Thread-safe HTTP client for the Open Responses API.
 ///
 /// `send` posts JSON and returns one response. `stream` reads server-sent events.
+/// `prewarm` sends `GET` on this client's session and returns without waiting. Open Responses has no prewarm operation.
 /// The client does not open a WebSocket and does not call `POST /v1/responses/compact`.
 /// Optional request fields may be omitted or rejected by the server. A local example is LM Studio at `http://127.0.0.1:1234`.
 public actor LLMClient {
@@ -1725,6 +1753,30 @@ public actor LLMClient {
 		self.apiKey = apiKey
 		self.customHeaders = customHeaders
 		self.session = URLSession(configuration: sessionConfiguration)
+	}
+
+	/// Opens this client's session to `baseURL` without generating.
+	///
+	/// Open Responses has no prewarm operation. This sends `GET` with the same `Authorization` and `customHeaders` as ``send(_:)``,
+	/// no body, and a five-second timeout. The call returns after the request is started. It does not wait for the response.
+	/// The request runs off this actor, so ``send(_:)`` and ``stream(_:)`` are not blocked. Failures are ignored.
+	public func prewarm() {
+		let urlRequest = warmRequest()
+		let session = self.session
+		Task.detached {
+			_ = try? await session.data(for: urlRequest)
+		}
+	}
+
+	private func warmRequest() -> URLRequest {
+		var urlRequest = URLRequest(url: baseURL)
+		urlRequest.httpMethod = "GET"
+		urlRequest.timeoutInterval = 5
+		urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+		for (field, value) in customHeaders {
+			urlRequest.setValue(value, forHTTPHeaderField: field)
+		}
+		return urlRequest
 	}
 
 	/// Sends a non-streaming HTTP request and returns the decoded response.
