@@ -18,7 +18,10 @@ The root README.md file must include the following sections in order:
 2. **Overview Section**
    - Clear description of what SwiftOpenResponsesDSL does
    - Brief explanation of the Open Responses API
-   - Key benefits and use cases
+   - Key benefits and use cases, including text inference from Open Responses 2026-04-24: `top_logprobs`, `safety_identifier`, `prompt_cache_key`, `stream_options`, assistant message `phase`, output-text logprobs, and the text streaming events (`output_text.done`, refusal, annotation, reasoning text, reasoning-summary text)
+   - A comment that a Responses endpoint may not implement the full specification. Use LM Studio local testing as the example: `swift test` against `http://127.0.0.1:1234` and `openai/gpt-oss-20b`, with a link to `Spec/LiveTesting.md`. Name the gaps that server shows: omitted `safety_identifier` and `prompt_cache_key`, rewritten `frequency_penalty` and `service_tier`, HTTP 400 on `item_reference` and object `tool_choice`, ignored JSON `text.format`, empty `logprobs`, and reasoning on the completed response without reasoning deltas. Point to `Spec/SwiftOpenResponsesDSL.md` for the client contract. Do not copy the live-test tables into the README.
+   - A short note that WebSocket transport and context compaction (`POST /v1/responses/compact`) are optional Open Responses additions and are not implemented. Streaming in the examples is HTTP SSE. Link `Spec/SwiftOpenResponsesDSL.md` for why those two stay deferred. Do not restate the uptake sources in the README.
+   - A short note that other Open Responses elements are optional and relevant: assistant `phase`, output-text `logprobs`, and the request configuration fields. A server may omit them. Link [Optional spec elements](SwiftOpenResponsesDSL.md#optional-spec-elements). Do not copy that list into the README.
 
 3. **Quick Start Section**
    - Installation instructions (Swift Package Manager)
@@ -37,6 +40,8 @@ The root README.md file must include the following sections in order:
 
 ## DocC Documentation
 All public APIs in source files must include triple-slash (///) comments following Apple standards.
+
+The DocC catalog landing page is `Sources/SwiftOpenResponsesDSL/SwiftOpenResponsesDSL.docc/SwiftOpenResponsesDSL.md`. It must stay aligned with the README overview: what a DSL is, the Open Responses HTTP client, the 2026-04-24 text-inference surface, optional spec elements (assistant `phase`, output-text `logprobs`, and the other request configuration fields, with a pointer to `Spec/SwiftOpenResponsesDSL.md`), the LM Studio live-test example (`swift test`, `http://127.0.0.1:1234`, `openai/gpt-oss-20b`, and the same gaps named in the README), and the note that WebSocket transport and `POST /v1/responses/compact` are optional and not implemented. Do not copy the live-test tables or the uptake sources into the catalog. Symbol comments on ``LLMClient``, ``ResponseRequest``, ``StreamEvent``, ``AssistantPhase``, ``TopLogprobs``, ``SafetyIdentifier``, ``PromptCacheKey``, ``StreamOptions``, and ``OutputTextContent`` must carry the same optional-field and HTTP-only facts.
 
 ### API Documentation Standards
 All public APIs must include comprehensive triple-slash comments following this structure:
@@ -72,17 +77,19 @@ The SKILL.md must include:
 - Installation snippet (SPM dependency + imports)
 - LLMClient initialization
 - Basic request examples (text and structured input)
-- Convenience input functions table (`System`, `Developer`, `User`, `UserImage`, `FunctionOutput`)
-- Configuration parameters reference table (all `ResponseConfigParameter` types with init syntax, range, and whether `try` is required)
+- Convenience input functions table (`System`, `Developer`, `User`, `UserImage`, `FunctionOutput`, `Assistant` with `phase` and optional `id`)
+- Configuration parameters reference table (all `ResponseConfigParameter` types with init syntax, range, and whether `try` is required), including `TopLogprobs`, `SafetyIdentifier`, `PromptCacheKey`, and `StreamOptions`
 - Conversation continuity with `PreviousResponseId`
-- Reasoning models section (effort levels, summary types, accessing reasoning output, streaming events)
-- Structured output section (`TextConfig`, `TextParam`, `TextFormat`)
+- Reasoning models section (effort levels, summary types, accessing reasoning output, streaming events including `reasoningDelta`, `reasoningDone`, `reasoningSummaryTextDelta`, and `reasoningSummaryTextDone`)
+- Text streaming: `contentPartDelta` still fires for `response.output_text.delta`; `outputTextDelta` (optional logprobs), `outputTextDone`, `refusalDelta`, `refusalDone`, and `outputTextAnnotationAdded`
+- Structured output section (`TextConfig`, `TextParam`, `TextFormat`, including JSON Schema `description`)
 - Tool calling (macro-powered and manual, `AgentTool` bridging, `ToolChoice`, `ToolsBuilder`)
 - ToolSession (declarative/explicit init, run, streaming with correct enum case patterns, `ToolSessionResult` with `ToolCallLogEntry`)
 - Agent (declarative/explicit init, methods with `await`, state, transcript including `.reasoning`)
 - Error handling (`LLMError` cases)
-- Common pitfalls (naming differences from SwiftChatCompletionsDSL, continuity model differences, config params that throw)
-- Out of scope section referencing companion skills
+- Common pitfalls (naming differences from SwiftChatCompletionsDSL, continuity model differences, config params that throw, assistant `phase`, and partial server support)
+- Partial server support pitfall: a Responses endpoint may not implement the full spec. Say that the gaps are optional Open Responses elements (`phase`, `logprobs`, optional request fields, and the optional WebSocket and compaction surfaces). Cite LM Studio local testing (`http://127.0.0.1:1234`, `openai/gpt-oss-20b`) and point to `Spec/LiveTesting.md` for the field list and to `Spec/SwiftOpenResponsesDSL.md` for the optional-element list. Name the kinds of gaps (omitted or rewritten echoes, HTTP 400, ignored JSON format, empty logprobs, reasoning without reasoning deltas). Do not paste the live-test tables or the optional-element list into the skill.
+- Out of scope section referencing companion skills, and stating that WebSocket transport and `POST /v1/responses/compact` (context compaction / compression) are not implemented. Point to `Spec/SwiftOpenResponsesDSL.md`. Streaming examples stay HTTP SSE.
 
 ### Constraints
 
@@ -100,10 +107,10 @@ A companion process skill that teaches AI coding assistants *how to design* an a
 The SKILL.md must include:
 
 - YAML frontmatter with `name` (kebab-case) and `description` (third-person, describes its process-skill role and trigger context)
-- A sequential, numbered design process covering: choosing the interaction pattern (one-shot vs ToolSession vs Agent with decision rules); selecting and configuring the model (including reasoning); defining tools (macro vs manual with decision rules); composing configuration parameters; choosing streaming vs non-streaming (with decision rules); structuring error handling; assembling the final code with a pre-flight checklist
+- A sequential, numbered design process covering: choosing the interaction pattern (one-shot vs ToolSession vs Agent with decision rules); selecting and configuring the model (including reasoning, and a note that a Responses server may not implement the full spec, with LM Studio local testing in `Spec/LiveTesting.md` as the example — do not restate that file's field table); defining tools (macro vs manual with decision rules); composing configuration parameters; choosing streaming vs non-streaming (with decision rules); structuring error handling; assembling the final code with a pre-flight checklist
 - Decision rules must be explicit — not just "here are the options" but "use X when Y"
 - A complete worked example demonstrating Agent with streaming, tool calling, and multi-turn continuity
-- An explicit boundary section stating that tool design (`@LLMTool` structs) is out of scope and directing to the SwiftLLMToolMacros skills
+- An explicit boundary section stating that tool design (`@LLMTool` structs) is out of scope and directing to the SwiftLLMToolMacros skills. The same boundary states that WebSocket transport and `POST /v1/responses/compact` are not part of this package; point to `Spec/SwiftOpenResponsesDSL.md` instead of repeating its uptake note.
 
 ### Constraints
 

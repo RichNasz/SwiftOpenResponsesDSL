@@ -32,7 +32,7 @@ Ask: how does the user interact with the LLM?
 
 ## Step 2: Select and Configure the Model
 
-Choose a model string and any model-specific configuration.
+Choose a model string and any model-specific configuration. The string is whatever that server expects. A Responses endpoint may not implement the full spec. The fields that vary are optional Open Responses elements (`phase`, `logprobs`, and the other request configuration fields). The list is in `Spec/SwiftOpenResponsesDSL.md`. LM Studio local testing in `Spec/LiveTesting.md` is the example: `swift test` against `http://127.0.0.1:1234` and `openai/gpt-oss-20b`. The server answers `POST /v1/responses`, and it still omits, rewrites, or rejects some of those optional fields (echoes, object `tool_choice`, JSON format, logprobs, reasoning deltas). When a field is optional for the product, treat HTTP 400 and a missing echo as a server limit. `LLMError.decodingFailed` means the payload does not match this client.
 
 ```swift
 // Standard model
@@ -264,3 +264,5 @@ print(followUp)
 ## Boundary
 
 This skill covers SwiftOpenResponsesDSL application design only. For designing `@LLMTool` structs (arguments, types, constraints), consult the `design-llm-tool` skill. For macro API reference, consult the `using-swift-llm-tool-macros` skill.
+
+Streaming means HTTP SSE through `stream`. WebSocket transport is an optional Open Responses addition (servers MAY offer it). Context compaction (`POST /v1/responses/compact`) is an optional extra endpoint. Neither is in this package. See `Spec/SwiftOpenResponsesDSL.md`. When a design needs a shorter context window, send a shorter `input`.

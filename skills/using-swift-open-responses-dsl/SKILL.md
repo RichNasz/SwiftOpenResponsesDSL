@@ -74,6 +74,7 @@ let response = try await client.send(request)
 | `User("...")` | User message `InputItem` |
 | `UserImage("url", detail: "auto")` | User image `InputItem` — `image_url` encodes as a flat string, `detail` (`"low"`, `"high"`, `"auto"`) is a sibling field |
 | `FunctionOutput(callId: "...", output: "...")` | Function call output `InputItem` |
+| `Assistant("...", phase: .finalAnswer, id: "msg_1")` | Assistant message with one `output_text` part and `phase` (`commentary` or `final_answer`). Resend `phase` on later turns. |
 
 ## Configuration Parameters
 
@@ -110,6 +111,10 @@ let request = try ResponseRequest(model: "gpt-4o", config: {
 | `Background` | `Background(true)` | Bool |
 | `MaxToolCalls` | `try MaxToolCalls(5)` | > 0 |
 | `TextConfig` | `TextConfig(TextParam(format: .jsonObject))` | see Structured Output |
+| `TopLogprobs` | `try TopLogprobs(5)` | ≥ 0 |
+| `SafetyIdentifier` | `try SafetyIdentifier("user-42")` | non-empty |
+| `PromptCacheKey` | `try PromptCacheKey("cache-abc")` | non-empty |
+| `StreamOptions` | `StreamOptions(includeObfuscation: false)` | `stream_options.include_obfuscation` |
 | `ToolChoiceParam` | `ToolChoiceParam(.required)` | see ToolChoice |
 
 Parameters with `try` validate their input and throw `LLMError.invalidValue` on failure.
@@ -163,7 +168,13 @@ item.encryptedContent           // String? — encrypted reasoning (with Include
 ```swift
 case .reasoningSummaryPartAdded(let part, let index, let summaryIndex)
 case .reasoningSummaryPartDone(let part, let index, let summaryIndex)
+case .reasoningDelta(let delta, let index, let contentIndex, let itemId, let sequenceNumber)
+case .reasoningDone(let text, let index, let contentIndex, let itemId, let sequenceNumber)
+case .reasoningSummaryTextDelta(let delta, let index, let summaryIndex, let itemId, let sequenceNumber)
+case .reasoningSummaryTextDone(let text, let index, let summaryIndex, let itemId, let sequenceNumber)
 ```
+
+`response.output_text.delta` still yields `.contentPartDelta`. When `item_id` and `sequence_number` are present it also yields `.outputTextDelta`, which carries optional `logprobs`. Completed text is `.outputTextDone`. Refusals are `.refusalDelta` and `.refusalDone`. Citations are `.outputTextAnnotationAdded`. An `error` event uses the payload `message`, or the raw JSON if the payload does not match.
 
 ## Structured Output
 
@@ -177,7 +188,8 @@ TextConfig(TextParam(format: .jsonObject))
 TextConfig(TextParam(format: .jsonSchema(
     name: "weather_response",
     schema: .object(properties: ["temp": .string()], required: ["temp"]),
-    strict: true
+    strict: true,
+    description: "Weather answer"
 )))
 
 // Verbosity control
@@ -421,8 +433,12 @@ do {
 - **`agent.stream()` not `agent.streamSend()`** — Streaming on Agent uses `stream`, not `streamSend`. (`streamSend` is SwiftChatCompletionsDSL's name.)
 - **`TranscriptEntry.reasoning`** — This DSL's transcript includes `.reasoning(ReasoningItem)` for reasoning model output. SwiftChatCompletionsDSL does not have this case.
 - **ToolSessionEvent differences** — Events here (`.iterationStarted`, `.llm`, `.toolCallStarted`, `.toolCallCompleted`, `.usageUpdate`) differ from SwiftChatCompletionsDSL's events.
-- **Config params that throw** — `Temperature`, `TopP`, `FrequencyPenalty`, `PresencePenalty`, `MaxOutputTokens`, `Instructions`, `PreviousResponseId`, `IncludeParam`, `RequestTimeout`, `ResourceTimeout`, `MaxToolCalls` all require `try`. Others (`Reasoning`, `TruncationParam`, `Store`, etc.) do not.
+- **Config params that throw** — `Temperature`, `TopP`, `FrequencyPenalty`, `PresencePenalty`, `MaxOutputTokens`, `Instructions`, `PreviousResponseId`, `IncludeParam`, `RequestTimeout`, `ResourceTimeout`, `MaxToolCalls`, `TopLogprobs`, `SafetyIdentifier`, `PromptCacheKey` all require `try`. Others (`Reasoning`, `TruncationParam`, `Store`, `StreamOptions`, etc.) do not.
+- **Assistant phase** — Resend `Assistant(..., phase:)` on follow-up turns that include prior assistant text. `phase` is `commentary` or `final_answer`.
+- **Partial server support** — A Responses endpoint may skip optional Open Responses elements. Those include assistant `phase`, output-text `logprobs`, the other request configuration fields, WebSocket transport, and `POST /v1/responses/compact`. The list is in `Spec/SwiftOpenResponsesDSL.md`. LM Studio at `http://127.0.0.1:1234` with `openai/gpt-oss-20b` is the local example in `Spec/LiveTesting.md`: omitted or rewritten echoes (`safety_identifier`, `prompt_cache_key`, `frequency_penalty`, `service_tier`), HTTP 400 for `item_reference` and object `tool_choice`, ignored JSON `text.format`, empty `logprobs`, and reasoning on the completed response without reasoning deltas. Handle `LLMError.serverError` when a field is rejected. `decodingFailed` means the payload does not match this client.
 
 ## Out of Scope
 
 This skill covers SwiftOpenResponsesDSL wiring only. For designing `@LLMTool` structs, consult the `using-swift-llm-tool-macros` and `design-llm-tool` skills. For the Chat Completions API, consult the `using-swift-chat-completions-dsl` skill.
+
+WebSocket transport is optional in Open Responses, and context compaction (`POST /v1/responses/compact`) is an optional extra endpoint. Neither is implemented. `client.stream` is HTTP SSE. See `Spec/SwiftOpenResponsesDSL.md`. Do not open a socket or send a compaction item.

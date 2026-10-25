@@ -18,12 +18,98 @@ For tool calling and agent capabilities, see [ToolCalling.md](ToolCalling.md) an
 - **Error Handling**: Propagate errors with a custom error enum using `throws`.
 
 ## Requirements
+- **Spec authority**: Files in `Spec/` are the source of truth for this package. Update the relevant spec before changing code, and implement only what that spec describes. The Open Responses API (spec version 2026-04-24) informs `Spec/`, but generated code follows `Spec/`.
 - **Swift Version**: 6.2+ (enable for trailing commas, `nonisolated`, improved type inference).
 - **Dependencies**: SwiftLLMToolMacros (for JSONSchema and tool macros).
 - **API Compatibility**: Align with Open Responses API JSON format for requests and responses (camelCase internally, snake_case in JSON via `CodingKeys`).
 - **Testing**: Support Swift Testing for async validation (e.g., `#expect` with concurrency traits).
 - **URL Handling**: Treat `baseURL` as the complete endpoint URL provided by the user, without modification.
 - **Minimum OS Versions**: macOS 13.0, iOS 16.0.
+- **Partial server support**: A Responses endpoint does not mean the server implements the full Open Responses specification. See [Server compatibility](#server-compatibility).
+- **Optional spec elements**: Call out Open Responses optional transports, endpoints, and fields where they affect this client. See [Optional spec elements](#optional-spec-elements).
+- **Deferred**: WebSocket transport and context compaction (`POST /v1/responses/compact`) are optional additions and are not implemented. See [Not implemented](#not-implemented).
+
+---
+
+## Server compatibility
+
+Not every inference server that exposes a Responses API implements every field in this spec. The gaps below are optional Open Responses elements: the server still speaks HTTP `POST /v1/responses`, and it omits, rewrites, or rejects fields the reference marks optional. The client still encodes the request fields and decodes the response and stream events defined here. A server may accept the call, omit or rewrite an echoed optional field, reject one with HTTP 400 (`LLMError.serverError`), or skip an optional stream event the client knows how to parse. See [Optional spec elements](#optional-spec-elements).
+
+Local testing is the example. [`LiveTesting.md`](LiveTesting.md) runs `swift test` against LM Studio at `http://127.0.0.1:1234` with model `openai/gpt-oss-20b`. That server answers the implemented calls and returns a decoded `ResponseObject`, and it does not have full spec support:
+
+- It omits `safety_identifier` and `prompt_cache_key` on the echo.
+- It rewrites `frequency_penalty: 0` and may report `service_tier` as `default` when `auto` was sent.
+- It rejects `item_reference` and object forms of `tool_choice` (`function`, `allowed_tools`) with HTTP 400.
+- It ignores `text.format` on the echo and may return `logprobs: []`. `top_logprobs` is echoed.
+- It puts reasoning on the completed response and does not emit reasoning deltas.
+
+A decoded response, a nil echo, or an allowed `serverError` is a limit of that server. `decodingFailed` means the payload does not match this client. `networkError` means the server did not answer.
+
+---
+
+## Optional spec elements
+
+Open Responses uses RFC 2119. An element is optional when the specification says MAY or OPTIONAL, or when the [reference](https://www.openresponses.org/reference) marks the field optional. This package implements the optional HTTP fields listed below, tolerates them when a response omits them, and leaves the optional transports and the compaction endpoint unimplemented. A server that skips an optional element can still be a useful Responses server. A server that breaks the required HTTP exchange cannot.
+
+Required for an HTTP Responses call, and implemented here:
+
+- Request body is `application/json`. The client sends `Authorization` and `Content-Type`. The specification lists both headers as required. A local server may ignore the key. LM Studio tests use `not-needed`.
+- A non-streaming response is `application/json`.
+- A streaming response is `text/event-stream`. The `event` name matches the body's `type`. The stream includes a terminal event: `response.completed`, `response.failed`, or `response.incomplete`.
+- The client accepts a stream that ends on that terminal event. The specification says servers MAY send `[DONE]` after it, and clients MUST accept the end with no `[DONE]`.
+
+Optional, implemented, and safe for a server to omit or ignore:
+
+- Assistant `phase` (`commentary` or `final_answer`) is an optional field added 2026-04-24. The client encodes it only from `Assistant(_:phase:id:)`. A missing `phase` decodes as `nil`. Some models, such as `gpt-5.3-codex`, degrade when a resent assistant message drops it. That is model behavior, not a required field.
+- `logprobs` on output text and on `response.output_text.delta` / `response.output_text.done` is optional as of 2026-04-24. A missing array decodes as `nil`. An empty array is valid. `top_logprobs` and `include: ["message.output_text.logprobs"]` are optional request fields.
+- Every other configuration parameter is optional on the request: sampling (`temperature`, `top_p`, `frequency_penalty`, `presence_penalty`), `truncation`, `service_tier`, `reasoning`, `store`, `background`, `max_output_tokens`, `max_tool_calls`, `text` (including JSON format and schema `description`), `stream_options`, `safety_identifier`, `prompt_cache_key`, `metadata`, `tools`, `tool_choice`, `previous_response_id`, `instructions`, and `parallel_tool_calls`. The client sends a field only when the caller sets it. A non-nil echo must match. A nil echo is allowed.
+- `id` and `status` on an input message, and `detail` on `input_image`, are optional.
+- Tools, image input, and reasoning are in the shared item model. A given model may still reject them with HTTP 400. The live suite allows `serverError` for vision and for object `tool_choice`.
+- Provider extension item types and extra fields are optional. The specification says portable clients ignore them. This client ignores unknown output item types and unknown keys on the fields it decodes.
+
+Optional, and not implemented. See [Not implemented](#not-implemented):
+
+- WebSocket transport. The specification says servers MAY expose `/v1/responses` as a socket. HTTP remains the required transport for a Responses call.
+- `POST /v1/responses/compact` and the compaction item. The specification adds them as a separate context-compression endpoint. It does not say every Responses server MUST offer them. The required create-response exchange does not include them.
+
+---
+
+## Not implemented
+
+Open Responses 2026-04-24 adds two optional features this package does not implement. `LLMClient` speaks HTTP `POST` to the caller-supplied `/v1/responses` URL, with JSON or SSE. It does not open a socket, call `/v1/responses/compact`, or encode or decode a compaction item (`type: "compaction"` / `CompactionSummaryItemParam`).
+
+Checked 2026-10-25. Both features are real in the spec and in OpenAI's own API. They are not the path local and multi-provider Responses servers have taken, which is why they stay out of this package for now.
+
+### WebSocket transport
+
+This transport is optional. The specification says servers MAY expose the same `/v1/responses` resource over a WebSocket. Where a server does, the client sends `type: "response.create"` and receives the same semantic events as SSE. One connection handles one in-flight response. Continuation, a 60-minute connection limit, and structured `error` envelopes apply only on that transport. It was added on 2026-04-24.
+
+This client does not implement it. Streaming stays HTTP SSE.
+
+Uptake is still thin outside OpenAI:
+
+- The [compliance suite](https://www.openresponses.org/compliance) keeps its seven WebSocket tests CLI-only. The browser suite does not run them. A 2026-10-23 write-up of the project notes the same split, and that client-side compliance tests are still missing.
+- The AWS Open Source post on 2026-10-22 still calls WebSocket transport a recent addition. It lists Ollama, vLLM, OpenRouter, and Hugging Face as servers of the shared HTTP format.
+- LM Studio's developer docs list HTTP endpoints (`/v1/responses`, chat, embeddings, completions, decisions, models). They do not list a Responses WebSocket. The local suite in [`LiveTesting.md`](LiveTesting.md) is that HTTP server.
+- Ollama's Responses support is HTTP. Its public streaming docs are newline-delimited JSON or SSE on HTTP, not `response.create` over a socket.
+- vLLM's Responses router is HTTP `POST /v1/responses` (and response retrieval). Its WebSocket work is a separate Realtime API at `/v1/realtime`, not this transport.
+
+OpenAI documents WebSocket mode for its own Responses API, and a few gateways have started to follow that client. That is not evidence that the local servers this package targets accept the socket.
+
+### Context compaction (compression)
+
+This endpoint is optional relative to `POST /v1/responses`. `POST /v1/responses/compact` returns a compacted conversation (`object: "response.compaction"`), not a response id. The [reference](https://www.openresponses.org/reference) describes it as preserving long-running context without defining provider-specific compression. A later turn sends that window as `input`. On a WebSocket, the next `response.create` omits `previous_response_id`. The endpoint and the compaction item were added on 2026-04-24. The compliance suite does include HTTP compaction tests.
+
+This client does not call that endpoint and does not model the compaction item. Callers who need a shorter window send a shorter `input` themselves.
+
+Uptake is concentrated on OpenAI and on proxies in front of OpenAI, not on local inference:
+
+- OpenAI's API and SDKs implement `responses.compact`. Codex clients call it. Gateway projects (CLIProxyAPI, sub2api, axonhub, llmrouter, and similar) added the route in 2026 so those clients keep working. Several of those changes are fallbacks for upstreams that reject the call.
+- LM Studio's published endpoint list has `POST /v1/responses` and no `/v1/responses/compact`. The January 2026 Open Responses post covers logprobs, cache stats, and image URLs.
+- Ollama and vLLM document HTTP `/v1/responses`. Public comparisons of those servers with LM Studio list that HTTP route and do not list compaction.
+- The same 2026-10-22 AWS post calls the compaction endpoint a recent addition, alongside WebSocket transport.
+
+Revisit both when a server this package is tested against, starting with the LM Studio host in [`LiveTesting.md`](LiveTesting.md), documents and answers the WebSocket or `POST /v1/responses/compact`.
 
 ---
 
@@ -37,7 +123,7 @@ For tool calling and agent capabilities, see [ToolCalling.md](ToolCalling.md) an
   - JSON: Encodes as strings (e.g., `"system"`).
 
 - **ResponseStatus**: Status of a response.
-  - Signature: `enum ResponseStatus: String, Codable, Sendable { case inProgress = "in_progress", completed, failed, incomplete }`
+  - Signature: `enum ResponseStatus: String, Codable, Sendable { case inProgress = "in_progress", completed, failed, incomplete, queued }`
 
 - **ReasoningEffort**: Controls reasoning depth.
   - Signature: `enum ReasoningEffort: String, Codable, Sendable { case none, low, medium, high, xhigh }`
@@ -53,6 +139,9 @@ For tool calling and agent capabilities, see [ToolCalling.md](ToolCalling.md) an
 
 - **TextVerbosity**: Controls verbosity of text responses.
   - Signature: `enum TextVerbosity: String, Codable, Sendable { case low, medium, high }`
+
+- **AssistantPhase**: Optional Open Responses field on an assistant message. Labels the message as intermediate commentary or the final answer. Follow-up requests that resend assistant text should include `phase`. Omitting it is valid in the spec and degrades models such as `gpt-5.3-codex`. Not used for user messages.
+  - Signature: `enum AssistantPhase: String, Codable, Sendable { case commentary, finalAnswer = "final_answer" }`
 
 - **ToolChoiceMode**: Mode used within `ToolChoice.allowedTools`, maps to `ToolChoiceValueEnum`.
   - Signature: `enum ToolChoiceMode: String, Codable, Sendable { case none, auto, required }`
@@ -83,11 +172,15 @@ For tool calling and agent capabilities, see [ToolCalling.md](ToolCalling.md) an
 - **InputMessage**: A message input item.
   ```swift
   struct InputMessage: Sendable, Encodable {
-      let role: Role  // system, user, developer
+      let role: Role  // system, user, assistant, developer
       let content: InputContent
+      let id: String?
+      let status: String?
+      let phase: AssistantPhase?
       // type is always "message"
   }
   ```
+  - Encode `id`, `status`, and `phase` only when present. `phase` is for assistant messages.
 
 - **InputContent**: Content of an input message (string or structured).
   ```swift
@@ -101,10 +194,12 @@ For tool calling and agent capabilities, see [ToolCalling.md](ToolCalling.md) an
   ```swift
   enum InputContentPart: Sendable, Encodable {
       case inputText(String)
+      case outputText(String)
       case inputImage(url: String, detail: String?)
   }
   ```
   - `inputText` encodes as `{"type": "input_text", "text": "..."}`
+  - `outputText` encodes as `{"type": "output_text", "text": "..."}` and is the content part used when resending assistant text
   - `inputImage` encodes as `{"type": "input_image", "image_url": "<url>", "detail": "<detail>"}` — `image_url` is a flat string (URL or base64 data URI), `detail` is an optional sibling field (`"low"`, `"high"`, or `"auto"`)
 
 - **FunctionCallOutputItem**: Result of a function call.
@@ -143,8 +238,10 @@ For tool calling and agent capabilities, see [ToolCalling.md](ToolCalling.md) an
       let role: Role
       let content: [OutputContent]
       let status: String?
+      let phase: AssistantPhase?
   }
   ```
+  - `phase` decodes from `"commentary"` or `"final_answer"`. Absent `phase` decodes as `nil`.
 
 - **OutputContent**: Content of an output message.
   ```swift
@@ -159,6 +256,23 @@ For tool calling and agent capabilities, see [ToolCalling.md](ToolCalling.md) an
   struct OutputTextContent: Sendable, Decodable {
       let text: String
       let annotations: [Annotation]?
+      let logprobs: [LogProb]?
+  }
+  ```
+  - A missing `annotations` array decodes as `nil`. `logprobs` is optional in Open Responses as of 2026-04-24. A missing `logprobs` array decodes as `nil`.
+
+- **LogProb**: One sampled token and its log probability.
+  ```swift
+  struct LogProb: Sendable, Decodable {
+      let token: String
+      let logprob: Double
+      let bytes: [Int]
+      let topLogprobs: [TopLogProb]  // JSON: "top_logprobs"
+  }
+  struct TopLogProb: Sendable, Decodable {
+      let token: String
+      let logprob: Double
+      let bytes: [Int]
   }
   ```
 
@@ -236,6 +350,10 @@ Each implementing `ResponseConfigParameter`:
 - **Background**: `init(_ value: Bool)` — sets `request.background` (use background execution mode)
 - **MaxToolCalls**: `init(_ value: Int) throws` — validates >0, sets `request.maxToolCalls`
 - **TextConfig**: `init(_ value: TextParam)` — sets `request.text` (response format and verbosity)
+- **TopLogprobs**: `init(_ value: Int) throws` — validates ≥ 0, sets `request.topLogprobs` (JSON: `top_logprobs`)
+- **SafetyIdentifier**: `init(_ value: String) throws` — validates non-empty, sets `request.safetyIdentifier` (JSON: `safety_identifier`)
+- **PromptCacheKey**: `init(_ value: String) throws` — validates non-empty, sets `request.promptCacheKey` (JSON: `prompt_cache_key`)
+- **StreamOptions**: `init(includeObfuscation: Bool)` — sets `request.streamOptions` (JSON: `stream_options.include_obfuscation`)
 - **ToolChoiceParam**: `init(_ value: ToolChoice)` — sets `request.toolChoice` (controls model tool selection strategy)
 
 ### 5. Convenience Message Functions
@@ -245,6 +363,7 @@ Each implementing `ResponseConfigParameter`:
 - `User(_ content: String) -> InputItem` — creates `.message(InputMessage(role: .user, content: .text(content)))`
 - `UserImage(_ url: String, detail: String? = nil) -> InputItem` — creates `.message(InputMessage(role: .user, content: .parts([.inputImage(url: url, detail: detail)])))`
 - `FunctionOutput(callId: String, output: String) -> InputItem` — creates `.functionCallOutput(FunctionCallOutputItem(callId: callId, output: output))`
+- `Assistant(_ content: String, phase: AssistantPhase, id: String? = nil) -> InputItem` — creates an assistant message whose content is one `output_text` part, with `phase` set. Use this when resending assistant text on a later turn.
 
 ### 6. Result Builders
 
@@ -332,7 +451,9 @@ Each implementing `ResponseConfigParameter`:
   enum TextFormat: Sendable, Encodable {
       case text                                              // {"type":"text"}
       case jsonObject                                        // {"type":"json_object"}
-      case jsonSchema(name: String, schema: JSONSchema?, strict: Bool) // {"type":"json_schema",...}
+      case jsonSchema(name: String, schema: JSONSchema?, strict: Bool, description: String?)
+      // {"type":"json_schema","name":"...","strict":true,"schema":...,"description":"..."}
+      // `description` is omitted from JSON when nil
   }
   ```
 
@@ -342,6 +463,22 @@ Each implementing `ResponseConfigParameter`:
       let format: TextFormat?
       let verbosity: TextVerbosity?
       init(format: TextFormat? = nil, verbosity: TextVerbosity? = nil)
+  }
+  ```
+
+- **StreamOptionsConfig**: Encoded body of `stream_options`.
+  ```swift
+  struct StreamOptionsConfig: Sendable, Encodable {
+      let includeObfuscation: Bool  // JSON: "include_obfuscation"
+  }
+  ```
+
+- **ResponseTextField**: Decoded `text` field on a response. Only the format `type` and `verbosity` are required by this package. Extra format keys are ignored.
+  ```swift
+  struct ResponseTextField: Sendable, Decodable {
+      struct Format: Sendable, Decodable { let type: String }
+      let format: Format?
+      let verbosity: TextVerbosity?
   }
   ```
 
@@ -369,6 +506,10 @@ Each implementing `ResponseConfigParameter`:
       var background: Bool?        // JSON: "background"
       var maxToolCalls: Int?       // JSON: "max_tool_calls"
       var text: TextParam?         // JSON: "text"
+      var topLogprobs: Int?        // JSON: "top_logprobs"
+      var safetyIdentifier: String? // JSON: "safety_identifier"
+      var promptCacheKey: String?  // JSON: "prompt_cache_key"
+      var streamOptions: StreamOptionsConfig? // JSON: "stream_options"
       let stream: Bool
       var requestTimeout: TimeInterval?   // Not encoded to JSON
       var resourceTimeout: TimeInterval?  // Not encoded to JSON
@@ -406,6 +547,20 @@ Each implementing `ResponseConfigParameter`:
       let incompleteDetails: IncompleteDetails?  // JSON: "incomplete_details"
       let previousResponseId: String?
       let metadata: [String: String]?
+      let instructions: String?
+      let temperature: Double?
+      let topP: Double?                    // JSON: "top_p"
+      let presencePenalty: Double?         // JSON: "presence_penalty"
+      let frequencyPenalty: Double?        // JSON: "frequency_penalty"
+      let topLogprobs: Int?                // JSON: "top_logprobs"
+      let text: ResponseTextField?         // JSON: "text" — format type plus verbosity
+      let truncation: Truncation?
+      let serviceTier: String?             // JSON: "service_tier"; free string so unknown tiers still decode
+      let maxOutputTokens: Int?            // JSON: "max_output_tokens"
+      let store: Bool?
+      let background: Bool?
+      let safetyIdentifier: String?        // JSON: "safety_identifier"
+      let promptCacheKey: String?          // JSON: "prompt_cache_key"
 
       struct OutputTokensDetails: Sendable, Decodable {
           let reasoningTokens: Int   // JSON: "reasoning_tokens"
@@ -463,8 +618,25 @@ Each implementing `ResponseConfigParameter`:
       case reasoningSummaryPartDone(part: ReasoningSummary, index: Int, summaryIndex: Int)
       case responseFailed(ResponseObject)
       case error(String)
+      case outputTextDelta(delta: String, index: Int, contentIndex: Int, itemId: String, sequenceNumber: Int, logprobs: [LogProb]?)
+      case outputTextDone(text: String, index: Int, contentIndex: Int, itemId: String, sequenceNumber: Int, logprobs: [LogProb]?)
+      case refusalDelta(delta: String, index: Int, contentIndex: Int, itemId: String, sequenceNumber: Int)
+      case refusalDone(refusal: String, index: Int, contentIndex: Int, itemId: String, sequenceNumber: Int)
+      case outputTextAnnotationAdded(annotation: Annotation?, index: Int, contentIndex: Int, annotationIndex: Int, itemId: String, sequenceNumber: Int)
+      case reasoningDelta(delta: String, index: Int, contentIndex: Int, itemId: String, sequenceNumber: Int)
+      case reasoningDone(text: String, index: Int, contentIndex: Int, itemId: String, sequenceNumber: Int)
+      case reasoningSummaryTextDelta(delta: String, index: Int, summaryIndex: Int, itemId: String, sequenceNumber: Int)
+      case reasoningSummaryTextDone(text: String, index: Int, summaryIndex: Int, itemId: String, sequenceNumber: Int)
   }
   ```
+  - Existing cases stay unchanged so current switches keep compiling.
+  - `response.output_text.delta` yields `contentPartDelta` and, when `item_id` and `sequence_number` are present, also `outputTextDelta` (including optional `logprobs`).
+  - `response.output_text.done` yields `outputTextDone`.
+  - `response.refusal.delta` and `response.refusal.done` yield `refusalDelta` and `refusalDone`.
+  - `response.output_text.annotation.added` yields `outputTextAnnotationAdded`. `annotation` may be null.
+  - `response.reasoning.delta` and `response.reasoning.done` yield `reasoningDelta` and `reasoningDone`.
+  - `response.reasoning_summary_text.delta` and `response.reasoning_summary_text.done` yield `reasoningSummaryTextDelta` and `reasoningSummaryTextDone`.
+  - `error` decodes an `ErrorPayload` (`type`, `code`, `message`, `param`) and uses `message` as the `error` string. If the payload does not match, the raw JSON string is used.
 
 ### 9. Actor: LLMClient
 
@@ -561,6 +733,8 @@ actor LLMClient {
 8. **ToolChoice Encoding** (Responses API format)
 9. **Streaming Event Parsing** (event+data SSE pairs)
 10. **Edge Cases** (empty input, missing model)
+11. **Text inference** (Open Responses 2026-04-24): encode `top_logprobs`, `safety_identifier`, `prompt_cache_key`, `stream_options`, and JSON Schema `description`; encode `Assistant` with `phase` and `output_text`; decode output `logprobs`, assistant `phase`, and `status: queued`; decode the optional text-generation fields on `ResponseObject`; parse each new text stream event, including both yields for `response.output_text.delta` and the `error` payload fallback.
+12. **Live server tests**: `Spec/LiveTesting.md`. `swift test` runs them against a local server. The default base URL is `http://127.0.0.1:1234` and the default model is `openai/gpt-oss-20b`. The suite is skipped only when that server does not answer. LM Studio is the example of a Responses server without full spec support: the suite allows omitted echoes, rewritten `frequency_penalty` and `service_tier`, HTTP 400 on `item_reference` and object `tool_choice`, an ignored JSON format, empty `logprobs`, and reasoning without reasoning deltas.
 
 ---
 
