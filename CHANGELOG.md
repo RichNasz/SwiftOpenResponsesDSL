@@ -10,7 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 
 - Text inference fields from Open Responses 2026-04-24: `top_logprobs`, `safety_identifier`, `prompt_cache_key`, `stream_options`, assistant message `phase`, output-text logprobs, and the text streaming events (`output_text.done`, refusal, annotation, reasoning text, reasoning summary text).
-- Live tests call the implemented API against a local server. The default model is `openai/gpt-oss-20b` at `http://127.0.0.1:1234`.
+- Live tests call the implemented API against a local server. The default model is `openai/gpt-oss-20b` at `http://127.0.0.1:1234`. LM Studio is the example of a Responses server that does not implement the full spec: omitted or rewritten echoes, HTTP 400 on some fields, ignored JSON format, empty logprobs, and reasoning without reasoning deltas.
+
+### Deferred
+
+- WebSocket transport and context compaction (`POST /v1/responses/compact`) stay unimplemented. Both are optional Open Responses additions from 2026-04-24. WebSocket is MAY. Compaction is a separate endpoint, not part of the required HTTP create-response exchange. OpenAI ships them. Local Responses servers this package targets, including LM Studio, document HTTP `POST /v1/responses` and do not document those two. Optional HTTP fields this package does implement (`phase`, `logprobs`, and the other request configuration fields) may be omitted by a server. See `Spec/SwiftOpenResponsesDSL.md`.
 
 ## [0.2.0] - 2026-06-12
 

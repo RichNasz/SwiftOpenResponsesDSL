@@ -2,7 +2,9 @@
 
 Live tests exercise the implemented client against a local Open Responses server. `Spec/SwiftOpenResponsesDSL.md` defines the API. This file defines which of that API the live suite must call.
 
-WebSocket transport and `POST /responses/compact` are not implemented, so the live suite does not call them. Stream and output cases the client can decode but a cooperative local model cannot be required to emit — refusal, URL citation, `queued`, `incomplete`, and `failed` — stay in the unit tests.
+Not every inference server that has a Responses API implements the full Open Responses specification. The fields this suite treats loosely are optional in that spec. See [Optional spec elements](SwiftOpenResponsesDSL.md#optional-spec-elements). This suite is the example. The default server is LM Studio. It accepts the calls and returns a decoded `ResponseObject`, and the rules below record where it omits, rewrites, or rejects those optional fields. A nil echo or an allowed `serverError` is that server's limit. `decodingFailed` and `networkError` are client failures.
+
+WebSocket transport and context compaction (`POST /v1/responses/compact`) are optional Open Responses additions and are not implemented. See [Not implemented](SwiftOpenResponsesDSL.md#not-implemented). The live suite does not open a socket or call that endpoint. LM Studio's documented Responses surface is HTTP `POST /v1/responses`, which matches that deferral. Stream and output cases the client can decode but a cooperative local model cannot be required to emit — refusal, URL citation, `queued`, `incomplete`, and `failed` — stay in the unit tests.
 
 ## Default server
 
@@ -20,7 +22,7 @@ The base URL is the server root, not the `/v1/responses` path. Before the suite 
 
 Tests run serialized in one suite. Each request sets `RequestTimeout(240)` unless a test says otherwise.
 
-The local server is LM Studio's Open Responses endpoint. It accepts the implemented request surface and returns a decoded `ResponseObject`, but it does not implement every field. Rules for that server:
+Rules for the default LM Studio server:
 
 - A call must return a decoded response, unless the row allows `LLMError.serverError`. `decodingFailed` and `networkError` always fail.
 - When a row names an echoed field, a non-nil echo must equal the sent value. A nil echo does not fail. LM Studio omits `safety_identifier` and `prompt_cache_key`.

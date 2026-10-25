@@ -11,15 +11,22 @@ Initially created with Claude Code. Ongoing maintenance uses [Grok Build](https:
 
 ## Overview
 
-SwiftOpenResponsesDSL provides an embedded domain-specific language for interacting with any LLM provider that implements the [Open Responses API](https://www.openresponses.org/) specification. Instead of manually constructing JSON payloads, you use Swift result builders to compose requests declaratively.
+A domain-specific language (DSL) is a small API shaped for one problem. SwiftOpenResponsesDSL is an embedded DSL: Swift result builders and typed values stand in for the JSON you would otherwise write by hand.
+
+It calls any provider that implements the [Open Responses API](https://www.openresponses.org/), a shared request and response format for text generation, tools, and streaming across model hosts.
 
 Key features:
 
 - **Result builders** -- `@InputBuilder` for input items, `@ResponseConfigBuilder` for configuration, `@SessionBuilder` for mixed items and tools
-- **Streaming** -- Async sequence of semantic `StreamEvent` values (deltas, completions, errors)
+- **Streaming** -- HTTP server-sent events as semantic `StreamEvent` values, including `output_text.done`, refusals, annotations, reasoning text, and reasoning-summary text
+- **Text inference** -- Open Responses 2026-04-24 fields: `top_logprobs`, `safety_identifier`, `prompt_cache_key`, `stream_options`, assistant message `phase`, and output-text logprobs
 - **Tool calling** -- Define function tools with `FunctionToolParam`, orchestrate multi-turn tool loops with `ToolSession`
 - **Conversation continuity** -- Chain responses with `previous_response_id` instead of re-sending full message history
 - **Actor-based client** -- Thread-safe `LLMClient` actor for concurrent usage
+
+A server that exposes a Responses endpoint may not implement the full specification. Optional Open Responses elements are the ones that vary: assistant `phase`, output-text `logprobs`, and the other request configuration fields. A server may omit them. This package sends and decodes the optional HTTP fields it implements, and it accepts a response that omits them. The list is [Optional spec elements](Spec/SwiftOpenResponsesDSL.md#optional-spec-elements). The client contract is in [`Spec/SwiftOpenResponsesDSL.md`](Spec/SwiftOpenResponsesDSL.md). `swift test` runs the live suite against LM Studio at `http://127.0.0.1:1234` with model `openai/gpt-oss-20b`. That server accepts the calls and returns a decoded response, and it skips some of those optional fields: it can omit `safety_identifier` and `prompt_cache_key`, rewrite `frequency_penalty` and `service_tier`, reject `item_reference` and object `tool_choice` with HTTP 400, ignore JSON `text.format`, return empty `logprobs`, and put reasoning on the completed response without reasoning deltas. The test rules are in [`Spec/LiveTesting.md`](Spec/LiveTesting.md).
+
+Streaming in this package is HTTP server-sent events. WebSocket transport is optional in Open Responses (servers MAY offer it). Context compaction (`POST /v1/responses/compact`) is an optional extra endpoint. Neither is implemented. The reason, including how little of that surface shows up on local servers such as LM Studio, is in [`Spec/SwiftOpenResponsesDSL.md`](Spec/SwiftOpenResponsesDSL.md).
 
 ## Quick Start
 

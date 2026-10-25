@@ -32,7 +32,11 @@ public enum ResponseStatus: String, Codable, Sendable {
 	case queued
 }
 
-/// Labels an assistant message as intermediate commentary or the final answer.
+/// Optional Open Responses label on an assistant message.
+///
+/// `commentary` is an intermediate turn. `finalAnswer` is the answer shown to the user.
+/// The field is optional on the wire. Resend it on a later turn that includes prior assistant text.
+/// A server may omit it. Some models degrade when a resent assistant message drops it.
 public enum AssistantPhase: String, Codable, Sendable {
 	case commentary
 	case finalAnswer = "final_answer"
@@ -349,6 +353,8 @@ public struct LogProb: Sendable, Decodable {
 }
 
 /// Text content with optional annotations and token log probabilities.
+///
+/// Open Responses marks `logprobs` optional. A missing array decodes as `nil`. An empty array is valid.
 public struct OutputTextContent: Sendable, Decodable {
 	public let text: String
 	public let annotations: [Annotation]?
@@ -594,7 +600,15 @@ public func FunctionOutput(callId: String, output: String) -> InputItem {
 }
 
 /// Creates an assistant message to resend on a later turn.
-/// Content is one `output_text` part, and `phase` is always encoded.
+///
+/// Content is one `output_text` part. `phase` is an optional Open Responses field, and this helper always encodes the value you pass.
+/// A server may ignore it.
+///
+/// - Parameters:
+///   - content: Assistant text to resend.
+///   - phase: `commentary` or `finalAnswer`.
+///   - id: Prior output item id, when the server gave one.
+/// - Returns: An ``InputItem`` message.
 @inlinable
 public func Assistant(_ content: String, phase: AssistantPhase, id: String? = nil) -> InputItem {
 	.message(InputMessage(
@@ -881,6 +895,8 @@ public struct MaxToolCalls: ResponseConfigParameter {
 }
 
 /// Number of most likely tokens to return at each position, with their log probabilities.
+///
+/// Optional Open Responses request field `top_logprobs`. A server may omit the echo or return an empty `logprobs` array.
 public struct TopLogprobs: ResponseConfigParameter {
 	public let value: Int
 
@@ -897,6 +913,8 @@ public struct TopLogprobs: ResponseConfigParameter {
 }
 
 /// Stable identifier used for safety monitoring.
+///
+/// Optional Open Responses request field `safety_identifier`. A server may omit the echo. LM Studio does.
 public struct SafetyIdentifier: ResponseConfigParameter {
 	public let value: String
 
@@ -913,6 +931,8 @@ public struct SafetyIdentifier: ResponseConfigParameter {
 }
 
 /// Key used when reading from or writing to the prompt cache.
+///
+/// Optional Open Responses request field `prompt_cache_key`. A server may omit the echo. LM Studio does.
 public struct PromptCacheKey: ResponseConfigParameter {
 	public let value: String
 
@@ -929,6 +949,9 @@ public struct PromptCacheKey: ResponseConfigParameter {
 }
 
 /// Options that control streamed response behavior.
+///
+/// Optional Open Responses request field `stream_options`. Applies to HTTP server-sent events.
+/// WebSocket transport is not implemented.
 public struct StreamOptions: ResponseConfigParameter {
 	public let includeObfuscation: Bool
 
@@ -1294,6 +1317,10 @@ public struct ReasoningConfig: Sendable, Encodable {
 }
 
 /// Represents a complete Responses API request.
+///
+/// Configuration fields are optional Open Responses elements. The client encodes a field only when it is set.
+/// A server may omit the echo. See the package specification for the optional list, including assistant `phase` and `logprobs`.
+/// This request is sent with HTTP `POST`. WebSocket transport and `POST /v1/responses/compact` are not implemented.
 public struct ResponseRequest: Encodable, Sendable {
 	public let model: String
 	public let input: ResponseInput
@@ -1634,7 +1661,13 @@ extension ResponseObject {
 
 // MARK: - Streaming Types
 
-/// Semantic streaming events from the Responses API.
+/// Semantic streaming events from an HTTP server-sent event response.
+///
+/// `response.output_text.delta` still yields ``contentPartDelta``. When `item_id` and `sequence_number` are present it also yields ``outputTextDelta``, which carries optional `logprobs`.
+/// ``outputTextDone``, ``refusalDelta``, ``refusalDone``, and ``outputTextAnnotationAdded`` cover completed text, refusals, and annotations.
+/// ``reasoningDelta``, ``reasoningDone``, ``reasoningSummaryTextDelta``, and ``reasoningSummaryTextDone`` cover reasoning text and reasoning-summary text.
+/// A server may skip an optional event. LM Studio can put reasoning on the completed response and emit no reasoning deltas.
+/// WebSocket transport is not implemented.
 public enum StreamEvent: Sendable {
 	case responseCreated(ResponseObject)
 	case responseInProgress(ResponseObject)
@@ -1665,7 +1698,11 @@ public enum StreamEvent: Sendable {
 
 // MARK: - LLMClient
 
-/// Thread-safe client for the Open Responses API.
+/// Thread-safe HTTP client for the Open Responses API.
+///
+/// `send` posts JSON and returns one response. `stream` reads server-sent events.
+/// The client does not open a WebSocket and does not call `POST /v1/responses/compact`.
+/// Optional request fields may be omitted or rejected by the server. A local example is LM Studio at `http://127.0.0.1:1234`.
 public actor LLMClient {
 	private let baseURL: URL
 	private let apiKey: String
@@ -1690,7 +1727,12 @@ public actor LLMClient {
 		self.session = URLSession(configuration: sessionConfiguration)
 	}
 
-	/// Sends a non-streaming request and returns the response.
+	/// Sends a non-streaming HTTP request and returns the decoded response.
+	///
+	/// - Parameter request: The Responses request. `stream` is sent as the request encodes it.
+	/// - Returns: The decoded ``ResponseObject``. Optional echoes may be `nil`.
+	/// - Throws: `LLMError.encodingFailed`, `LLMError.networkError`, `LLMError.invalidResponse`,
+	///   `LLMError.rateLimit`, `LLMError.serverError`, or `LLMError.decodingFailed`.
 	public func send(_ request: ResponseRequest) async throws -> ResponseObject {
 		var urlRequest = URLRequest(url: baseURL)
 		urlRequest.httpMethod = "POST"
@@ -1740,7 +1782,10 @@ public actor LLMClient {
 		}
 	}
 
-	/// Streams a request and returns an async stream of semantic events.
+	/// Streams a request as HTTP server-sent events.
+	///
+	/// - Parameter request: The Responses request. Set `stream` to `true` so the server returns SSE.
+	/// - Returns: Semantic ``StreamEvent`` values until the connection ends. Open Responses allows a server to omit a trailing `[DONE]`.
 	nonisolated public func stream(_ request: ResponseRequest) -> AsyncThrowingStream<StreamEvent, Error> {
 		AsyncThrowingStream { continuation in
 			let task = Task { [baseURL, apiKey, customHeaders, session] in
