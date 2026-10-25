@@ -8,7 +8,7 @@ Claude Code created this project initially. Maintain and expand it with Grok Bui
 
 ## Architecture
 
-SwiftOpenResponsesDSL provides direct access to [Open Responses API](https://www.openresponses.org/) endpoints — a multi-provider, interoperable LLM interface specification. Other packages may reference this package to build higher-level integrations (e.g., [SwiftOpenResponsesLanguageModel](https://github.com/RichNasz/SwiftOpenResponsesLanguageModel)).
+SwiftOpenResponsesDSL provides direct access to [Open Responses API](https://www.openresponses.org/) endpoints — a multi-provider, interoperable LLM interface specification. Other packages may reference this package to build higher-level integrations.
 
 ### Key Differences from SwiftChatCompletionsDSL
 - **Input model**: `[InputItem]` (polymorphic enum) instead of `[any ChatMessage]` (flat array)

@@ -42,11 +42,10 @@ This endpoint is optional relative to `POST /v1/responses`. It returns a compact
 | Surface | Spec name | What a caller does today |
 |---|---|---|
 | Reasoning item as input | `ReasoningItemParam` (`summary`, `content`, `encrypted_content`) | `ReasoningItem` is decode-only. `include: ["reasoning.encrypted_content"]` can request the blob, and the client stores it on the output item. Nothing encodes that item onto a later turn. |
-| File input | `InputFileContentParam` and `InputFileContent` (`filename`, `file_data`, `file_url`) | No content part |
 | Video input | `InputVideoContent` (`video_url`) | No content part |
 | Assistant refusal as input, and citations on resent assistant text | `RefusalContentParam`; `OutputTextContentParam.annotations` | `Assistant` encodes one `output_text` part with `type` and `text` only |
 
-Message roles `system`, `user`, `developer`, and `assistant` are implemented. So are `input_text`, `output_text`, `input_image`, `item_reference`, and a `function_call` item sent back as input. Reasoning configuration and reasoning output are implemented. Sending the reasoning item back is not.
+Message roles `system`, `user`, `developer`, and `assistant` are implemented. So are `input_text`, `output_text`, `input_image`, `input_file` (`filename`, `file_data`, `file_url` on `InputFileContentParam`), `item_reference`, and a `function_call` item sent back as input. Reasoning configuration and reasoning output are implemented. Sending the reasoning item back is not. An `input_file` part on an output message is still not decoded. See [Decoded narrowly](#decoded-narrowly).
 
 ### Tool results
 
