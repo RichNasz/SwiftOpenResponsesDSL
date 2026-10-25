@@ -18,6 +18,7 @@ For tool calling and agent capabilities, see [ToolCalling.md](ToolCalling.md) an
 - **Error Handling**: Propagate errors with a custom error enum using `throws`.
 
 ## Requirements
+- **Spec authority**: Files in `Spec/` are the source of truth for this package. Update the relevant spec before changing code, and implement only what that spec describes. The Open Responses API (spec version 2026-04-24) informs `Spec/`, but generated code follows `Spec/`.
 - **Swift Version**: 6.2+ (enable for trailing commas, `nonisolated`, improved type inference).
 - **Dependencies**: SwiftLLMToolMacros (for JSONSchema and tool macros).
 - **API Compatibility**: Align with Open Responses API JSON format for requests and responses (camelCase internally, snake_case in JSON via `CodingKeys`).
@@ -37,7 +38,7 @@ For tool calling and agent capabilities, see [ToolCalling.md](ToolCalling.md) an
   - JSON: Encodes as strings (e.g., `"system"`).
 
 - **ResponseStatus**: Status of a response.
-  - Signature: `enum ResponseStatus: String, Codable, Sendable { case inProgress = "in_progress", completed, failed, incomplete }`
+  - Signature: `enum ResponseStatus: String, Codable, Sendable { case inProgress = "in_progress", completed, failed, incomplete, queued }`
 
 - **ReasoningEffort**: Controls reasoning depth.
   - Signature: `enum ReasoningEffort: String, Codable, Sendable { case none, low, medium, high, xhigh }`
@@ -53,6 +54,9 @@ For tool calling and agent capabilities, see [ToolCalling.md](ToolCalling.md) an
 
 - **TextVerbosity**: Controls verbosity of text responses.
   - Signature: `enum TextVerbosity: String, Codable, Sendable { case low, medium, high }`
+
+- **AssistantPhase**: Labels an assistant message as intermediate commentary or the final answer. Follow-up requests must resend `phase` on every assistant message. Omitting it degrades models such as `gpt-5.3-codex`. Not used for user messages.
+  - Signature: `enum AssistantPhase: String, Codable, Sendable { case commentary, finalAnswer = "final_answer" }`
 
 - **ToolChoiceMode**: Mode used within `ToolChoice.allowedTools`, maps to `ToolChoiceValueEnum`.
   - Signature: `enum ToolChoiceMode: String, Codable, Sendable { case none, auto, required }`
@@ -83,11 +87,15 @@ For tool calling and agent capabilities, see [ToolCalling.md](ToolCalling.md) an
 - **InputMessage**: A message input item.
   ```swift
   struct InputMessage: Sendable, Encodable {
-      let role: Role  // system, user, developer
+      let role: Role  // system, user, assistant, developer
       let content: InputContent
+      let id: String?
+      let status: String?
+      let phase: AssistantPhase?
       // type is always "message"
   }
   ```
+  - Encode `id`, `status`, and `phase` only when present. `phase` is for assistant messages.
 
 - **InputContent**: Content of an input message (string or structured).
   ```swift
@@ -101,10 +109,12 @@ For tool calling and agent capabilities, see [ToolCalling.md](ToolCalling.md) an
   ```swift
   enum InputContentPart: Sendable, Encodable {
       case inputText(String)
+      case outputText(String)
       case inputImage(url: String, detail: String?)
   }
   ```
   - `inputText` encodes as `{"type": "input_text", "text": "..."}`
+  - `outputText` encodes as `{"type": "output_text", "text": "..."}` and is the content part used when resending assistant text
   - `inputImage` encodes as `{"type": "input_image", "image_url": "<url>", "detail": "<detail>"}` — `image_url` is a flat string (URL or base64 data URI), `detail` is an optional sibling field (`"low"`, `"high"`, or `"auto"`)
 
 - **FunctionCallOutputItem**: Result of a function call.
@@ -143,8 +153,10 @@ For tool calling and agent capabilities, see [ToolCalling.md](ToolCalling.md) an
       let role: Role
       let content: [OutputContent]
       let status: String?
+      let phase: AssistantPhase?
   }
   ```
+  - `phase` decodes from `"commentary"` or `"final_answer"`. Absent `phase` decodes as `nil`.
 
 - **OutputContent**: Content of an output message.
   ```swift
@@ -159,6 +171,23 @@ For tool calling and agent capabilities, see [ToolCalling.md](ToolCalling.md) an
   struct OutputTextContent: Sendable, Decodable {
       let text: String
       let annotations: [Annotation]?
+      let logprobs: [LogProb]?
+  }
+  ```
+  - A missing `annotations` array decodes as `nil`. A missing `logprobs` array decodes as `nil`.
+
+- **LogProb**: One sampled token and its log probability.
+  ```swift
+  struct LogProb: Sendable, Decodable {
+      let token: String
+      let logprob: Double
+      let bytes: [Int]
+      let topLogprobs: [TopLogProb]  // JSON: "top_logprobs"
+  }
+  struct TopLogProb: Sendable, Decodable {
+      let token: String
+      let logprob: Double
+      let bytes: [Int]
   }
   ```
 
@@ -236,6 +265,10 @@ Each implementing `ResponseConfigParameter`:
 - **Background**: `init(_ value: Bool)` — sets `request.background` (use background execution mode)
 - **MaxToolCalls**: `init(_ value: Int) throws` — validates >0, sets `request.maxToolCalls`
 - **TextConfig**: `init(_ value: TextParam)` — sets `request.text` (response format and verbosity)
+- **TopLogprobs**: `init(_ value: Int) throws` — validates ≥ 0, sets `request.topLogprobs` (JSON: `top_logprobs`)
+- **SafetyIdentifier**: `init(_ value: String) throws` — validates non-empty, sets `request.safetyIdentifier` (JSON: `safety_identifier`)
+- **PromptCacheKey**: `init(_ value: String) throws` — validates non-empty, sets `request.promptCacheKey` (JSON: `prompt_cache_key`)
+- **StreamOptions**: `init(includeObfuscation: Bool)` — sets `request.streamOptions` (JSON: `stream_options.include_obfuscation`)
 - **ToolChoiceParam**: `init(_ value: ToolChoice)` — sets `request.toolChoice` (controls model tool selection strategy)
 
 ### 5. Convenience Message Functions
@@ -245,6 +278,7 @@ Each implementing `ResponseConfigParameter`:
 - `User(_ content: String) -> InputItem` — creates `.message(InputMessage(role: .user, content: .text(content)))`
 - `UserImage(_ url: String, detail: String? = nil) -> InputItem` — creates `.message(InputMessage(role: .user, content: .parts([.inputImage(url: url, detail: detail)])))`
 - `FunctionOutput(callId: String, output: String) -> InputItem` — creates `.functionCallOutput(FunctionCallOutputItem(callId: callId, output: output))`
+- `Assistant(_ content: String, phase: AssistantPhase, id: String? = nil) -> InputItem` — creates an assistant message whose content is one `output_text` part, with `phase` set. Use this when resending assistant text on a later turn.
 
 ### 6. Result Builders
 
@@ -332,7 +366,9 @@ Each implementing `ResponseConfigParameter`:
   enum TextFormat: Sendable, Encodable {
       case text                                              // {"type":"text"}
       case jsonObject                                        // {"type":"json_object"}
-      case jsonSchema(name: String, schema: JSONSchema?, strict: Bool) // {"type":"json_schema",...}
+      case jsonSchema(name: String, schema: JSONSchema?, strict: Bool, description: String?)
+      // {"type":"json_schema","name":"...","strict":true,"schema":...,"description":"..."}
+      // `description` is omitted from JSON when nil
   }
   ```
 
@@ -342,6 +378,22 @@ Each implementing `ResponseConfigParameter`:
       let format: TextFormat?
       let verbosity: TextVerbosity?
       init(format: TextFormat? = nil, verbosity: TextVerbosity? = nil)
+  }
+  ```
+
+- **StreamOptionsConfig**: Encoded body of `stream_options`.
+  ```swift
+  struct StreamOptionsConfig: Sendable, Encodable {
+      let includeObfuscation: Bool  // JSON: "include_obfuscation"
+  }
+  ```
+
+- **ResponseTextField**: Decoded `text` field on a response. Only the format `type` and `verbosity` are required by this package. Extra format keys are ignored.
+  ```swift
+  struct ResponseTextField: Sendable, Decodable {
+      struct Format: Sendable, Decodable { let type: String }
+      let format: Format?
+      let verbosity: TextVerbosity?
   }
   ```
 
@@ -369,6 +421,10 @@ Each implementing `ResponseConfigParameter`:
       var background: Bool?        // JSON: "background"
       var maxToolCalls: Int?       // JSON: "max_tool_calls"
       var text: TextParam?         // JSON: "text"
+      var topLogprobs: Int?        // JSON: "top_logprobs"
+      var safetyIdentifier: String? // JSON: "safety_identifier"
+      var promptCacheKey: String?  // JSON: "prompt_cache_key"
+      var streamOptions: StreamOptionsConfig? // JSON: "stream_options"
       let stream: Bool
       var requestTimeout: TimeInterval?   // Not encoded to JSON
       var resourceTimeout: TimeInterval?  // Not encoded to JSON
@@ -406,6 +462,20 @@ Each implementing `ResponseConfigParameter`:
       let incompleteDetails: IncompleteDetails?  // JSON: "incomplete_details"
       let previousResponseId: String?
       let metadata: [String: String]?
+      let instructions: String?
+      let temperature: Double?
+      let topP: Double?                    // JSON: "top_p"
+      let presencePenalty: Double?         // JSON: "presence_penalty"
+      let frequencyPenalty: Double?        // JSON: "frequency_penalty"
+      let topLogprobs: Int?                // JSON: "top_logprobs"
+      let text: ResponseTextField?         // JSON: "text" — format type plus verbosity
+      let truncation: Truncation?
+      let serviceTier: String?             // JSON: "service_tier"; free string so unknown tiers still decode
+      let maxOutputTokens: Int?            // JSON: "max_output_tokens"
+      let store: Bool?
+      let background: Bool?
+      let safetyIdentifier: String?        // JSON: "safety_identifier"
+      let promptCacheKey: String?          // JSON: "prompt_cache_key"
 
       struct OutputTokensDetails: Sendable, Decodable {
           let reasoningTokens: Int   // JSON: "reasoning_tokens"
@@ -463,8 +533,25 @@ Each implementing `ResponseConfigParameter`:
       case reasoningSummaryPartDone(part: ReasoningSummary, index: Int, summaryIndex: Int)
       case responseFailed(ResponseObject)
       case error(String)
+      case outputTextDelta(delta: String, index: Int, contentIndex: Int, itemId: String, sequenceNumber: Int, logprobs: [LogProb]?)
+      case outputTextDone(text: String, index: Int, contentIndex: Int, itemId: String, sequenceNumber: Int, logprobs: [LogProb]?)
+      case refusalDelta(delta: String, index: Int, contentIndex: Int, itemId: String, sequenceNumber: Int)
+      case refusalDone(refusal: String, index: Int, contentIndex: Int, itemId: String, sequenceNumber: Int)
+      case outputTextAnnotationAdded(annotation: Annotation?, index: Int, contentIndex: Int, annotationIndex: Int, itemId: String, sequenceNumber: Int)
+      case reasoningDelta(delta: String, index: Int, contentIndex: Int, itemId: String, sequenceNumber: Int)
+      case reasoningDone(text: String, index: Int, contentIndex: Int, itemId: String, sequenceNumber: Int)
+      case reasoningSummaryTextDelta(delta: String, index: Int, summaryIndex: Int, itemId: String, sequenceNumber: Int)
+      case reasoningSummaryTextDone(text: String, index: Int, summaryIndex: Int, itemId: String, sequenceNumber: Int)
   }
   ```
+  - Existing cases stay unchanged so current switches keep compiling.
+  - `response.output_text.delta` yields `contentPartDelta` and, when `item_id` and `sequence_number` are present, also `outputTextDelta` (including optional `logprobs`).
+  - `response.output_text.done` yields `outputTextDone`.
+  - `response.refusal.delta` and `response.refusal.done` yield `refusalDelta` and `refusalDone`.
+  - `response.output_text.annotation.added` yields `outputTextAnnotationAdded`. `annotation` may be null.
+  - `response.reasoning.delta` and `response.reasoning.done` yield `reasoningDelta` and `reasoningDone`.
+  - `response.reasoning_summary_text.delta` and `response.reasoning_summary_text.done` yield `reasoningSummaryTextDelta` and `reasoningSummaryTextDone`.
+  - `error` decodes an `ErrorPayload` (`type`, `code`, `message`, `param`) and uses `message` as the `error` string. If the payload does not match, the raw JSON string is used.
 
 ### 9. Actor: LLMClient
 
@@ -561,6 +648,7 @@ actor LLMClient {
 8. **ToolChoice Encoding** (Responses API format)
 9. **Streaming Event Parsing** (event+data SSE pairs)
 10. **Edge Cases** (empty input, missing model)
+11. **Text inference** (Open Responses 2026-04-24): encode `top_logprobs`, `safety_identifier`, `prompt_cache_key`, `stream_options`, and JSON Schema `description`; encode `Assistant` with `phase` and `output_text`; decode output `logprobs`, assistant `phase`, and `status: queued`; decode the optional text-generation fields on `ResponseObject`; parse each new text stream event, including both yields for `response.output_text.delta` and the `error` payload fallback.
 
 ---
 

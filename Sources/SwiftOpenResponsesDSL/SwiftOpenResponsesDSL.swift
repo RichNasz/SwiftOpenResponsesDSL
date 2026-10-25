@@ -29,6 +29,13 @@ public enum ResponseStatus: String, Codable, Sendable {
 	case completed
 	case failed
 	case incomplete
+	case queued
+}
+
+/// Labels an assistant message as intermediate commentary or the final answer.
+public enum AssistantPhase: String, Codable, Sendable {
+	case commentary
+	case finalAnswer = "final_answer"
 }
 
 /// Controls the depth of model reasoning.
@@ -99,6 +106,14 @@ func validatePositive(_ value: Int, parameterName: String) throws {
 	}
 }
 
+/// Validates that an `Int` value is zero or greater.
+@inlinable
+func validateNonNegative(_ value: Int, parameterName: String) throws {
+	guard value >= 0 else {
+		throw LLMError.invalidValue("\(parameterName) must be 0 or greater, got \(value)")
+	}
+}
+
 /// Validates that a `String` value is not empty.
 @inlinable
 func validateNotEmpty(_ value: String, parameterName: String) throws {
@@ -143,6 +158,7 @@ extension InputContent: Encodable {
 ///   (not a nested object). `detail` is an optional sibling field: `"low"`, `"high"`, or `"auto"`.
 public enum InputContentPart: Sendable, Encodable {
 	case inputText(String)
+	case outputText(String)
 	case inputImage(url: String, detail: String?)
 
 	private enum CodingKeys: String, CodingKey {
@@ -154,6 +170,10 @@ public enum InputContentPart: Sendable, Encodable {
 		case .inputText(let text):
 			var container = encoder.container(keyedBy: CodingKeys.self)
 			try container.encode("input_text", forKey: .type)
+			try container.encode(text, forKey: .text)
+		case .outputText(let text):
+			var container = encoder.container(keyedBy: CodingKeys.self)
+			try container.encode("output_text", forKey: .type)
 			try container.encode(text, forKey: .text)
 		case .inputImage(let url, let detail):
 			var container = encoder.container(keyedBy: CodingKeys.self)
@@ -170,15 +190,21 @@ public enum InputContentPart: Sendable, Encodable {
 public struct InputMessage: Sendable, Encodable {
 	public let role: Role
 	public let content: InputContent
+	public let id: String?
+	public let status: String?
+	public let phase: AssistantPhase?
 
 	private enum CodingKeys: String, CodingKey {
-		case type, role, content
+		case type, role, content, id, status, phase
 	}
 
 	/// Creates a new InputMessage with the given role and content.
-	public init(role: Role, content: InputContent) {
+	public init(role: Role, content: InputContent, id: String? = nil, status: String? = nil, phase: AssistantPhase? = nil) {
 		self.role = role
 		self.content = content
+		self.id = id
+		self.status = status
+		self.phase = phase
 	}
 
 	public func encode(to encoder: Encoder) throws {
@@ -186,6 +212,9 @@ public struct InputMessage: Sendable, Encodable {
 		try container.encode("message", forKey: .type)
 		try container.encode(role, forKey: .role)
 		try container.encode(content, forKey: .content)
+		try container.encodeIfPresent(id, forKey: .id)
+		try container.encodeIfPresent(status, forKey: .status)
+		try container.encodeIfPresent(phase, forKey: .phase)
 	}
 }
 
@@ -284,15 +313,52 @@ extension Annotation: Decodable {
 	}
 }
 
-/// Text content with optional annotations.
+/// One alternative token and its log probability.
+public struct TopLogProb: Sendable, Decodable {
+	public let token: String
+	public let logprob: Double
+	public let bytes: [Int]
+
+	/// Creates a new TopLogProb.
+	public init(token: String, logprob: Double, bytes: [Int]) {
+		self.token = token
+		self.logprob = logprob
+		self.bytes = bytes
+	}
+}
+
+/// The log probability of a sampled token.
+public struct LogProb: Sendable, Decodable {
+	public let token: String
+	public let logprob: Double
+	public let bytes: [Int]
+	public let topLogprobs: [TopLogProb]
+
+	private enum CodingKeys: String, CodingKey {
+		case token, logprob, bytes
+		case topLogprobs = "top_logprobs"
+	}
+
+	/// Creates a new LogProb.
+	public init(token: String, logprob: Double, bytes: [Int], topLogprobs: [TopLogProb]) {
+		self.token = token
+		self.logprob = logprob
+		self.bytes = bytes
+		self.topLogprobs = topLogprobs
+	}
+}
+
+/// Text content with optional annotations and token log probabilities.
 public struct OutputTextContent: Sendable, Decodable {
 	public let text: String
 	public let annotations: [Annotation]?
+	public let logprobs: [LogProb]?
 
 	/// Creates a new OutputTextContent with text and optional annotations.
-	public init(text: String, annotations: [Annotation]? = nil) {
+	public init(text: String, annotations: [Annotation]? = nil, logprobs: [LogProb]? = nil) {
 		self.text = text
 		self.annotations = annotations
+		self.logprobs = logprobs
 	}
 }
 
@@ -304,7 +370,7 @@ public enum OutputContent: Sendable {
 
 extension OutputContent: Decodable {
 	private enum CodingKeys: String, CodingKey {
-		case type, text, refusal, annotations
+		case type, text, refusal, annotations, logprobs
 	}
 
 	public init(from decoder: Decoder) throws {
@@ -314,7 +380,8 @@ extension OutputContent: Decodable {
 		case "output_text":
 			let text = try container.decode(String.self, forKey: .text)
 			let annotations = try container.decodeIfPresent([Annotation].self, forKey: .annotations)
-			self = .outputText(OutputTextContent(text: text, annotations: annotations))
+			let logprobs = try container.decodeIfPresent([LogProb].self, forKey: .logprobs)
+			self = .outputText(OutputTextContent(text: text, annotations: annotations, logprobs: logprobs))
 		case "refusal":
 			let refusalText = try container.decode(String.self, forKey: .refusal)
 			self = .refusal(refusalText)
@@ -332,13 +399,15 @@ public struct OutputMessage: Sendable, Decodable {
 	public let role: Role
 	public let content: [OutputContent]
 	public let status: String?
+	public let phase: AssistantPhase?
 
 	/// Creates a new OutputMessage.
-	public init(id: String, role: Role, content: [OutputContent], status: String? = nil) {
+	public init(id: String, role: Role, content: [OutputContent], status: String? = nil, phase: AssistantPhase? = nil) {
 		self.id = id
 		self.role = role
 		self.content = content
 		self.status = status
+		self.phase = phase
 	}
 }
 
@@ -522,6 +591,18 @@ public func UserImage(_ url: String, detail: String? = nil) -> InputItem {
 @inlinable
 public func FunctionOutput(callId: String, output: String) -> InputItem {
 	.functionCallOutput(FunctionCallOutputItem(callId: callId, output: output))
+}
+
+/// Creates an assistant message to resend on a later turn.
+/// Content is one `output_text` part, and `phase` is always encoded.
+@inlinable
+public func Assistant(_ content: String, phase: AssistantPhase, id: String? = nil) -> InputItem {
+	.message(InputMessage(
+		role: .assistant,
+		content: .parts([.outputText(content)]),
+		id: id,
+		phase: phase
+	))
 }
 
 // MARK: - Configuration Parameter Structs
@@ -799,6 +880,68 @@ public struct MaxToolCalls: ResponseConfigParameter {
 	}
 }
 
+/// Number of most likely tokens to return at each position, with their log probabilities.
+public struct TopLogprobs: ResponseConfigParameter {
+	public let value: Int
+
+	/// Creates a top logprobs parameter. Validates value ≥ 0.
+	/// - Throws: `LLMError.invalidValue` if negative.
+	public init(_ value: Int) throws {
+		try validateNonNegative(value, parameterName: "TopLogprobs")
+		self.value = value
+	}
+
+	public func apply(to request: inout ResponseRequest) {
+		request.topLogprobs = value
+	}
+}
+
+/// Stable identifier used for safety monitoring.
+public struct SafetyIdentifier: ResponseConfigParameter {
+	public let value: String
+
+	/// Creates a safety identifier. Validates non-empty.
+	/// - Throws: `LLMError.invalidValue` if empty.
+	public init(_ value: String) throws {
+		try validateNotEmpty(value, parameterName: "SafetyIdentifier")
+		self.value = value
+	}
+
+	public func apply(to request: inout ResponseRequest) {
+		request.safetyIdentifier = value
+	}
+}
+
+/// Key used when reading from or writing to the prompt cache.
+public struct PromptCacheKey: ResponseConfigParameter {
+	public let value: String
+
+	/// Creates a prompt cache key. Validates non-empty.
+	/// - Throws: `LLMError.invalidValue` if empty.
+	public init(_ value: String) throws {
+		try validateNotEmpty(value, parameterName: "PromptCacheKey")
+		self.value = value
+	}
+
+	public func apply(to request: inout ResponseRequest) {
+		request.promptCacheKey = value
+	}
+}
+
+/// Options that control streamed response behavior.
+public struct StreamOptions: ResponseConfigParameter {
+	public let includeObfuscation: Bool
+
+	/// Creates stream options. `includeObfuscation` maps to `stream_options.include_obfuscation`.
+	public init(includeObfuscation: Bool) {
+		self.includeObfuscation = includeObfuscation
+	}
+
+	public func apply(to request: inout ResponseRequest) {
+		request.streamOptions = StreamOptionsConfig(includeObfuscation: includeObfuscation)
+	}
+}
+
 /// Configures the text response format and verbosity.
 public struct TextConfig: ResponseConfigParameter {
 	public let value: TextParam
@@ -824,10 +967,10 @@ public enum TextVerbosity: String, Codable, Sendable {
 public enum TextFormat: Sendable, Encodable {
 	case text
 	case jsonObject
-	case jsonSchema(name: String, schema: JSONSchemaValue?, strict: Bool)
+	case jsonSchema(name: String, schema: JSONSchemaValue?, strict: Bool, description: String?)
 
 	private enum CodingKeys: String, CodingKey {
-		case type, name, schema, strict
+		case type, name, schema, strict, description
 	}
 
 	public func encode(to encoder: Encoder) throws {
@@ -837,13 +980,14 @@ public enum TextFormat: Sendable, Encodable {
 			try container.encode("text", forKey: .type)
 		case .jsonObject:
 			try container.encode("json_object", forKey: .type)
-		case .jsonSchema(let name, let schema, let strict):
+		case .jsonSchema(let name, let schema, let strict, let description):
 			try container.encode("json_schema", forKey: .type)
 			try container.encode(name, forKey: .name)
 			try container.encode(strict, forKey: .strict)
 			if let schema {
 				try container.encode(schema, forKey: .schema)
 			}
+			try container.encodeIfPresent(description, forKey: .description)
 		}
 	}
 }
@@ -857,6 +1001,31 @@ public struct TextParam: Sendable, Encodable {
 		self.format = format
 		self.verbosity = verbosity
 	}
+}
+
+/// Encoded `stream_options` object.
+public struct StreamOptionsConfig: Sendable, Encodable {
+	public let includeObfuscation: Bool
+
+	private enum CodingKeys: String, CodingKey {
+		case includeObfuscation = "include_obfuscation"
+	}
+
+	/// Creates stream options for the request body.
+	public init(includeObfuscation: Bool) {
+		self.includeObfuscation = includeObfuscation
+	}
+}
+
+/// Decoded `text` configuration echoed on a response.
+public struct ResponseTextField: Sendable, Decodable {
+	/// Format type echoed by the service, such as `text` or `json_schema`.
+	public struct Format: Sendable, Decodable {
+		public let type: String
+	}
+
+	public let format: Format?
+	public let verbosity: TextVerbosity?
 }
 
 // MARK: - JSON Schema
@@ -1147,6 +1316,10 @@ public struct ResponseRequest: Encodable, Sendable {
 	public var background: Bool?
 	public var maxToolCalls: Int?
 	public var text: TextParam?
+	public var topLogprobs: Int?
+	public var safetyIdentifier: String?
+	public var promptCacheKey: String?
+	public var streamOptions: StreamOptionsConfig?
 	public let stream: Bool
 	public var requestTimeout: TimeInterval?
 	public var resourceTimeout: TimeInterval?
@@ -1166,6 +1339,10 @@ public struct ResponseRequest: Encodable, Sendable {
 		case include, store, background
 		case maxToolCalls = "max_tool_calls"
 		case text, stream
+		case topLogprobs = "top_logprobs"
+		case safetyIdentifier = "safety_identifier"
+		case promptCacheKey = "prompt_cache_key"
+		case streamOptions = "stream_options"
 	}
 
 	/// Creates a request with builder-based input items and config.
@@ -1234,6 +1411,20 @@ public struct ResponseObject: Sendable, Decodable {
 	public let incompleteDetails: IncompleteDetails?
 	public let previousResponseId: String?
 	public let metadata: [String: String]?
+	public let instructions: String?
+	public let temperature: Double?
+	public let topP: Double?
+	public let presencePenalty: Double?
+	public let frequencyPenalty: Double?
+	public let topLogprobs: Int?
+	public let text: ResponseTextField?
+	public let truncation: Truncation?
+	public let serviceTier: String?
+	public let maxOutputTokens: Int?
+	public let store: Bool?
+	public let background: Bool?
+	public let safetyIdentifier: String?
+	public let promptCacheKey: String?
 
 	private enum CodingKeys: String, CodingKey {
 		case id, object
@@ -1242,7 +1433,17 @@ public struct ResponseObject: Sendable, Decodable {
 		case model, output, status, usage, error
 		case incompleteDetails = "incomplete_details"
 		case previousResponseId = "previous_response_id"
-		case metadata
+		case metadata, instructions, temperature
+		case topP = "top_p"
+		case presencePenalty = "presence_penalty"
+		case frequencyPenalty = "frequency_penalty"
+		case topLogprobs = "top_logprobs"
+		case text, truncation
+		case serviceTier = "service_tier"
+		case maxOutputTokens = "max_output_tokens"
+		case store, background
+		case safetyIdentifier = "safety_identifier"
+		case promptCacheKey = "prompt_cache_key"
 	}
 
 	/// Creates a new ResponseObject.
@@ -1258,7 +1459,21 @@ public struct ResponseObject: Sendable, Decodable {
 		error: ErrorInfo? = nil,
 		incompleteDetails: IncompleteDetails? = nil,
 		previousResponseId: String? = nil,
-		metadata: [String: String]? = nil
+		metadata: [String: String]? = nil,
+		instructions: String? = nil,
+		temperature: Double? = nil,
+		topP: Double? = nil,
+		presencePenalty: Double? = nil,
+		frequencyPenalty: Double? = nil,
+		topLogprobs: Int? = nil,
+		text: ResponseTextField? = nil,
+		truncation: Truncation? = nil,
+		serviceTier: String? = nil,
+		maxOutputTokens: Int? = nil,
+		store: Bool? = nil,
+		background: Bool? = nil,
+		safetyIdentifier: String? = nil,
+		promptCacheKey: String? = nil
 	) {
 		self.id = id
 		self.object = object
@@ -1272,6 +1487,20 @@ public struct ResponseObject: Sendable, Decodable {
 		self.incompleteDetails = incompleteDetails
 		self.previousResponseId = previousResponseId
 		self.metadata = metadata
+		self.instructions = instructions
+		self.temperature = temperature
+		self.topP = topP
+		self.presencePenalty = presencePenalty
+		self.frequencyPenalty = frequencyPenalty
+		self.topLogprobs = topLogprobs
+		self.text = text
+		self.truncation = truncation
+		self.serviceTier = serviceTier
+		self.maxOutputTokens = maxOutputTokens
+		self.store = store
+		self.background = background
+		self.safetyIdentifier = safetyIdentifier
+		self.promptCacheKey = promptCacheKey
 	}
 
 	/// Details explaining why a response is incomplete.
@@ -1423,6 +1652,15 @@ public enum StreamEvent: Sendable {
 	case reasoningSummaryPartDone(part: ReasoningSummary, index: Int, summaryIndex: Int)
 	case responseFailed(ResponseObject)
 	case error(String)
+	case outputTextDelta(delta: String, index: Int, contentIndex: Int, itemId: String, sequenceNumber: Int, logprobs: [LogProb]?)
+	case outputTextDone(text: String, index: Int, contentIndex: Int, itemId: String, sequenceNumber: Int, logprobs: [LogProb]?)
+	case refusalDelta(delta: String, index: Int, contentIndex: Int, itemId: String, sequenceNumber: Int)
+	case refusalDone(refusal: String, index: Int, contentIndex: Int, itemId: String, sequenceNumber: Int)
+	case outputTextAnnotationAdded(annotation: Annotation?, index: Int, contentIndex: Int, annotationIndex: Int, itemId: String, sequenceNumber: Int)
+	case reasoningDelta(delta: String, index: Int, contentIndex: Int, itemId: String, sequenceNumber: Int)
+	case reasoningDone(text: String, index: Int, contentIndex: Int, itemId: String, sequenceNumber: Int)
+	case reasoningSummaryTextDelta(delta: String, index: Int, summaryIndex: Int, itemId: String, sequenceNumber: Int)
+	case reasoningSummaryTextDone(text: String, index: Int, summaryIndex: Int, itemId: String, sequenceNumber: Int)
 }
 
 // MARK: - LLMClient
@@ -1555,8 +1793,8 @@ public actor LLMClient {
 							guard let eventType = currentEventType else { continue }
 							guard let jsonData = jsonString.data(using: .utf8) else { continue }
 
-							let event = Self.parseStreamEvent(eventType: eventType, data: jsonData, decoder: decoder)
-							if let event {
+							let events = Self.parseStreamEvent(eventType: eventType, data: jsonData, decoder: decoder)
+							for event in events {
 								continuation.yield(event)
 							}
 							currentEventType = nil
@@ -1577,78 +1815,176 @@ public actor LLMClient {
 		}
 	}
 
-	private static func parseStreamEvent(eventType: String, data: Data, decoder: JSONDecoder) -> StreamEvent? {
+	static func parseStreamEvent(eventType: String, data: Data, decoder: JSONDecoder) -> [StreamEvent] {
 		switch eventType {
 		case "response.created":
 			if let wrapper = try? decoder.decode(ResponseEventWrapper.self, from: data) {
-				return .responseCreated(wrapper.response)
+				return [.responseCreated(wrapper.response)]
 			}
 		case "response.in_progress":
 			if let wrapper = try? decoder.decode(ResponseEventWrapper.self, from: data) {
-				return .responseInProgress(wrapper.response)
+				return [.responseInProgress(wrapper.response)]
 			}
 		case "response.output_item.added":
 			if let wrapper = try? decoder.decode(OutputItemEventWrapper.self, from: data) {
-				return .outputItemAdded(wrapper.item, index: wrapper.outputIndex)
+				return [.outputItemAdded(wrapper.item, index: wrapper.outputIndex)]
 			}
 		case "response.content_part.added":
 			if let wrapper = try? decoder.decode(ContentPartEventWrapper.self, from: data) {
-				return .contentPartAdded(index: wrapper.outputIndex, contentIndex: wrapper.contentIndex)
+				return [.contentPartAdded(index: wrapper.outputIndex, contentIndex: wrapper.contentIndex)]
 			}
 		case "response.output_text.delta":
 			if let wrapper = try? decoder.decode(TextDeltaEventWrapper.self, from: data) {
-				return .contentPartDelta(delta: wrapper.delta, index: wrapper.outputIndex, contentIndex: wrapper.contentIndex)
+				var events: [StreamEvent] = [
+					.contentPartDelta(delta: wrapper.delta, index: wrapper.outputIndex, contentIndex: wrapper.contentIndex)
+				]
+				if let itemId = wrapper.itemId, let sequenceNumber = wrapper.sequenceNumber {
+					events.append(.outputTextDelta(
+						delta: wrapper.delta,
+						index: wrapper.outputIndex,
+						contentIndex: wrapper.contentIndex,
+						itemId: itemId,
+						sequenceNumber: sequenceNumber,
+						logprobs: wrapper.logprobs
+					))
+				}
+				return events
+			}
+		case "response.output_text.done":
+			if let wrapper = try? decoder.decode(OutputTextDoneEventWrapper.self, from: data) {
+				return [.outputTextDone(
+					text: wrapper.text,
+					index: wrapper.outputIndex,
+					contentIndex: wrapper.contentIndex,
+					itemId: wrapper.itemId,
+					sequenceNumber: wrapper.sequenceNumber,
+					logprobs: wrapper.logprobs
+				)]
 			}
 		case "response.content_part.done":
 			if let wrapper = try? decoder.decode(ContentPartEventWrapper.self, from: data) {
-				return .contentPartDone(index: wrapper.outputIndex, contentIndex: wrapper.contentIndex)
+				return [.contentPartDone(index: wrapper.outputIndex, contentIndex: wrapper.contentIndex)]
 			}
 		case "response.output_item.done":
 			if let wrapper = try? decoder.decode(OutputItemEventWrapper.self, from: data) {
-				return .outputItemDone(wrapper.item, index: wrapper.outputIndex)
+				return [.outputItemDone(wrapper.item, index: wrapper.outputIndex)]
 			}
 		case "response.function_call_arguments.delta":
 			if let wrapper = try? decoder.decode(FunctionCallArgumentsEventWrapper.self, from: data),
 			   let delta = wrapper.delta {
-				return .functionCallArgumentsDelta(delta: delta, callId: wrapper.callId, index: wrapper.outputIndex)
+				return [.functionCallArgumentsDelta(delta: delta, callId: wrapper.callId, index: wrapper.outputIndex)]
 			}
 		case "response.function_call_arguments.done":
 			if let wrapper = try? decoder.decode(FunctionCallArgumentsEventWrapper.self, from: data),
 			   let arguments = wrapper.arguments {
-				return .functionCallArgumentsDone(arguments: arguments, callId: wrapper.callId, index: wrapper.outputIndex)
+				return [.functionCallArgumentsDone(arguments: arguments, callId: wrapper.callId, index: wrapper.outputIndex)]
 			}
 		case "response.completed":
 			if let wrapper = try? decoder.decode(ResponseEventWrapper.self, from: data) {
-				return .responseCompleted(wrapper.response)
+				return [.responseCompleted(wrapper.response)]
 			}
 		case "response.failed":
 			if let wrapper = try? decoder.decode(ResponseEventWrapper.self, from: data) {
-				return .responseFailed(wrapper.response)
+				return [.responseFailed(wrapper.response)]
 			}
 		case "response.queued":
 			if let wrapper = try? decoder.decode(ResponseEventWrapper.self, from: data) {
-				return .responseQueued(wrapper.response)
+				return [.responseQueued(wrapper.response)]
 			}
 		case "response.incomplete":
 			if let wrapper = try? decoder.decode(ResponseEventWrapper.self, from: data) {
-				return .responseIncomplete(wrapper.response)
+				return [.responseIncomplete(wrapper.response)]
+			}
+		case "response.refusal.delta":
+			if let wrapper = try? decoder.decode(RefusalDeltaEventWrapper.self, from: data) {
+				return [.refusalDelta(
+					delta: wrapper.delta,
+					index: wrapper.outputIndex,
+					contentIndex: wrapper.contentIndex,
+					itemId: wrapper.itemId,
+					sequenceNumber: wrapper.sequenceNumber
+				)]
+			}
+		case "response.refusal.done":
+			if let wrapper = try? decoder.decode(RefusalDoneEventWrapper.self, from: data) {
+				return [.refusalDone(
+					refusal: wrapper.refusal,
+					index: wrapper.outputIndex,
+					contentIndex: wrapper.contentIndex,
+					itemId: wrapper.itemId,
+					sequenceNumber: wrapper.sequenceNumber
+				)]
+			}
+		case "response.output_text.annotation.added":
+			if let wrapper = try? decoder.decode(AnnotationAddedEventWrapper.self, from: data) {
+				return [.outputTextAnnotationAdded(
+					annotation: wrapper.annotation,
+					index: wrapper.outputIndex,
+					contentIndex: wrapper.contentIndex,
+					annotationIndex: wrapper.annotationIndex,
+					itemId: wrapper.itemId,
+					sequenceNumber: wrapper.sequenceNumber
+				)]
+			}
+		case "response.reasoning.delta":
+			if let wrapper = try? decoder.decode(ReasoningTextDeltaEventWrapper.self, from: data) {
+				return [.reasoningDelta(
+					delta: wrapper.delta,
+					index: wrapper.outputIndex,
+					contentIndex: wrapper.contentIndex,
+					itemId: wrapper.itemId,
+					sequenceNumber: wrapper.sequenceNumber
+				)]
+			}
+		case "response.reasoning.done":
+			if let wrapper = try? decoder.decode(ReasoningTextDoneEventWrapper.self, from: data) {
+				return [.reasoningDone(
+					text: wrapper.text,
+					index: wrapper.outputIndex,
+					contentIndex: wrapper.contentIndex,
+					itemId: wrapper.itemId,
+					sequenceNumber: wrapper.sequenceNumber
+				)]
+			}
+		case "response.reasoning_summary_text.delta":
+			if let wrapper = try? decoder.decode(ReasoningSummaryTextDeltaEventWrapper.self, from: data) {
+				return [.reasoningSummaryTextDelta(
+					delta: wrapper.delta,
+					index: wrapper.outputIndex,
+					summaryIndex: wrapper.summaryIndex,
+					itemId: wrapper.itemId,
+					sequenceNumber: wrapper.sequenceNumber
+				)]
+			}
+		case "response.reasoning_summary_text.done":
+			if let wrapper = try? decoder.decode(ReasoningSummaryTextDoneEventWrapper.self, from: data) {
+				return [.reasoningSummaryTextDone(
+					text: wrapper.text,
+					index: wrapper.outputIndex,
+					summaryIndex: wrapper.summaryIndex,
+					itemId: wrapper.itemId,
+					sequenceNumber: wrapper.sequenceNumber
+				)]
 			}
 		case "error":
+			if let payload = try? decoder.decode(StreamErrorPayload.self, from: data) {
+				return [.error(payload.error.message)]
+			}
 			if let str = String(data: data, encoding: .utf8) {
-				return .error(str)
+				return [.error(str)]
 			}
 		case "response.reasoning_summary_part.added":
 			if let wrapper = try? decoder.decode(ReasoningSummaryPartEventWrapper.self, from: data) {
-				return .reasoningSummaryPartAdded(part: wrapper.part, index: wrapper.outputIndex, summaryIndex: wrapper.summaryIndex)
+				return [.reasoningSummaryPartAdded(part: wrapper.part, index: wrapper.outputIndex, summaryIndex: wrapper.summaryIndex)]
 			}
 		case "response.reasoning_summary_part.done":
 			if let wrapper = try? decoder.decode(ReasoningSummaryPartEventWrapper.self, from: data) {
-				return .reasoningSummaryPartDone(part: wrapper.part, index: wrapper.outputIndex, summaryIndex: wrapper.summaryIndex)
+				return [.reasoningSummaryPartDone(part: wrapper.part, index: wrapper.outputIndex, summaryIndex: wrapper.summaryIndex)]
 			}
 		default:
 			break
 		}
-		return nil
+		return []
 	}
 }
 
@@ -1682,12 +2018,158 @@ struct TextDeltaEventWrapper: Decodable {
 	let delta: String
 	let outputIndex: Int
 	let contentIndex: Int
+	let itemId: String?
+	let sequenceNumber: Int?
+	let logprobs: [LogProb]?
 
 	private enum CodingKeys: String, CodingKey {
 		case delta
 		case outputIndex = "output_index"
 		case contentIndex = "content_index"
+		case itemId = "item_id"
+		case sequenceNumber = "sequence_number"
+		case logprobs
 	}
+}
+
+struct OutputTextDoneEventWrapper: Decodable {
+	let text: String
+	let outputIndex: Int
+	let contentIndex: Int
+	let itemId: String
+	let sequenceNumber: Int
+	let logprobs: [LogProb]?
+
+	private enum CodingKeys: String, CodingKey {
+		case text
+		case outputIndex = "output_index"
+		case contentIndex = "content_index"
+		case itemId = "item_id"
+		case sequenceNumber = "sequence_number"
+		case logprobs
+	}
+}
+
+struct RefusalDeltaEventWrapper: Decodable {
+	let delta: String
+	let outputIndex: Int
+	let contentIndex: Int
+	let itemId: String
+	let sequenceNumber: Int
+
+	private enum CodingKeys: String, CodingKey {
+		case delta
+		case outputIndex = "output_index"
+		case contentIndex = "content_index"
+		case itemId = "item_id"
+		case sequenceNumber = "sequence_number"
+	}
+}
+
+struct RefusalDoneEventWrapper: Decodable {
+	let refusal: String
+	let outputIndex: Int
+	let contentIndex: Int
+	let itemId: String
+	let sequenceNumber: Int
+
+	private enum CodingKeys: String, CodingKey {
+		case refusal
+		case outputIndex = "output_index"
+		case contentIndex = "content_index"
+		case itemId = "item_id"
+		case sequenceNumber = "sequence_number"
+	}
+}
+
+struct AnnotationAddedEventWrapper: Decodable {
+	let annotation: Annotation?
+	let outputIndex: Int
+	let contentIndex: Int
+	let annotationIndex: Int
+	let itemId: String
+	let sequenceNumber: Int
+
+	private enum CodingKeys: String, CodingKey {
+		case annotation
+		case outputIndex = "output_index"
+		case contentIndex = "content_index"
+		case annotationIndex = "annotation_index"
+		case itemId = "item_id"
+		case sequenceNumber = "sequence_number"
+	}
+}
+
+struct ReasoningTextDeltaEventWrapper: Decodable {
+	let delta: String
+	let outputIndex: Int
+	let contentIndex: Int
+	let itemId: String
+	let sequenceNumber: Int
+
+	private enum CodingKeys: String, CodingKey {
+		case delta
+		case outputIndex = "output_index"
+		case contentIndex = "content_index"
+		case itemId = "item_id"
+		case sequenceNumber = "sequence_number"
+	}
+}
+
+struct ReasoningTextDoneEventWrapper: Decodable {
+	let text: String
+	let outputIndex: Int
+	let contentIndex: Int
+	let itemId: String
+	let sequenceNumber: Int
+
+	private enum CodingKeys: String, CodingKey {
+		case text
+		case outputIndex = "output_index"
+		case contentIndex = "content_index"
+		case itemId = "item_id"
+		case sequenceNumber = "sequence_number"
+	}
+}
+
+struct ReasoningSummaryTextDeltaEventWrapper: Decodable {
+	let delta: String
+	let outputIndex: Int
+	let summaryIndex: Int
+	let itemId: String
+	let sequenceNumber: Int
+
+	private enum CodingKeys: String, CodingKey {
+		case delta
+		case outputIndex = "output_index"
+		case summaryIndex = "summary_index"
+		case itemId = "item_id"
+		case sequenceNumber = "sequence_number"
+	}
+}
+
+struct ReasoningSummaryTextDoneEventWrapper: Decodable {
+	let text: String
+	let outputIndex: Int
+	let summaryIndex: Int
+	let itemId: String
+	let sequenceNumber: Int
+
+	private enum CodingKeys: String, CodingKey {
+		case text
+		case outputIndex = "output_index"
+		case summaryIndex = "summary_index"
+		case itemId = "item_id"
+		case sequenceNumber = "sequence_number"
+	}
+}
+
+struct StreamErrorBody: Decodable {
+	let message: String
+}
+
+struct StreamErrorPayload: Decodable {
+	let error: StreamErrorBody
 }
 
 struct ReasoningSummaryPartEventWrapper: Decodable {

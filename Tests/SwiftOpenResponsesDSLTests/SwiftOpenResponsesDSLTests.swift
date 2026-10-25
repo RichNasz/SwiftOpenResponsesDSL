@@ -896,3 +896,266 @@ import Testing
 		Issue.record("Expected llm(.responseCompleted) case")
 	}
 }
+
+// MARK: - Text Inference
+
+@Test func testTextInferenceRequestEncoding() throws {
+	let request = try ResponseRequest(model: "gpt-5.2", config: {
+		try TopLogprobs(2)
+		try SafetyIdentifier("user-42")
+		try PromptCacheKey("cache-abc")
+		StreamOptions(includeObfuscation: false)
+		TextConfig(TextParam(format: .jsonSchema(
+			name: "answer",
+			schema: nil,
+			strict: true,
+			description: "A short answer"
+		)))
+	}, text: "Hello")
+
+	let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any]
+	#expect(json?["top_logprobs"] as? Int == 2)
+	#expect(json?["safety_identifier"] as? String == "user-42")
+	#expect(json?["prompt_cache_key"] as? String == "cache-abc")
+	let options = json?["stream_options"] as? [String: Any]
+	#expect(options?["include_obfuscation"] as? Bool == false)
+	let text = json?["text"] as? [String: Any]
+	let format = text?["format"] as? [String: Any]
+	#expect(format?["type"] as? String == "json_schema")
+	#expect(format?["description"] as? String == "A short answer")
+	#expect(format?["name"] as? String == "answer")
+}
+
+@Test func testTextInferenceRequestValidation() throws {
+	#expect(throws: LLMError.invalidValue("TopLogprobs must be 0 or greater, got -1")) {
+		_ = try TopLogprobs(-1)
+	}
+	#expect(throws: LLMError.self) {
+		_ = try SafetyIdentifier("")
+	}
+	#expect(throws: LLMError.self) {
+		_ = try PromptCacheKey("")
+	}
+	let zero = try TopLogprobs(0)
+	#expect(zero.value == 0)
+}
+
+@Test func testAssistantPhaseEncoding() throws {
+	let item = Assistant("The answer is 4.", phase: .finalAnswer, id: "msg_9")
+	let data = try JSONEncoder().encode(item)
+	let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+	#expect(json?["role"] as? String == "assistant")
+	#expect(json?["phase"] as? String == "final_answer")
+	#expect(json?["id"] as? String == "msg_9")
+	let parts = json?["content"] as? [[String: Any]]
+	#expect(parts?.first?["type"] as? String == "output_text")
+	#expect(parts?.first?["text"] as? String == "The answer is 4.")
+}
+
+@Test func testOutputTextLogprobsAndPhaseDecoding() throws {
+	let jsonString = """
+	{
+		"id": "resp_text",
+		"object": "response",
+		"created_at": 1700000000,
+		"model": "gpt-5.2",
+		"status": "queued",
+		"output": [
+			{
+				"type": "message",
+				"id": "msg_1",
+				"role": "assistant",
+				"status": "completed",
+				"phase": "final_answer",
+				"content": [
+					{
+						"type": "output_text",
+						"text": "Hi",
+						"logprobs": [
+							{
+								"token": "Hi",
+								"logprob": -0.1,
+								"bytes": [72, 105],
+								"top_logprobs": [
+									{"token": "Hi", "logprob": -0.1, "bytes": [72, 105]}
+								]
+							}
+						]
+					}
+				]
+			}
+		],
+		"instructions": "Be brief",
+		"temperature": 0.2,
+		"top_p": 0.9,
+		"presence_penalty": 0,
+		"frequency_penalty": 0,
+		"top_logprobs": 1,
+		"text": {"format": {"type": "text"}, "verbosity": "low"},
+		"truncation": "auto",
+		"service_tier": "priority",
+		"max_output_tokens": 32,
+		"store": false,
+		"background": false,
+		"safety_identifier": "user-42",
+		"prompt_cache_key": "cache-abc"
+	}
+	"""
+	let response = try JSONDecoder().decode(ResponseObject.self, from: Data(jsonString.utf8))
+	#expect(response.status == .queued)
+	#expect(response.instructions == "Be brief")
+	#expect(response.temperature == 0.2)
+	#expect(response.topP == 0.9)
+	#expect(response.topLogprobs == 1)
+	#expect(response.text?.format?.type == "text")
+	#expect(response.text?.verbosity == .low)
+	#expect(response.truncation == .auto)
+	#expect(response.serviceTier == "priority")
+	#expect(response.maxOutputTokens == 32)
+	#expect(response.store == false)
+	#expect(response.background == false)
+	#expect(response.safetyIdentifier == "user-42")
+	#expect(response.promptCacheKey == "cache-abc")
+	guard case .message(let message) = response.output.first else {
+		Issue.record("Expected a message")
+		return
+	}
+	#expect(message.phase == .finalAnswer)
+	guard case .outputText(let text) = message.content.first else {
+		Issue.record("Expected output text")
+		return
+	}
+	#expect(text.logprobs?.first?.token == "Hi")
+	#expect(text.logprobs?.first?.topLogprobs.first?.bytes == [72, 105])
+	#expect(text.annotations == nil)
+}
+
+@Test func testTextStreamEventParsing() throws {
+	let decoder = JSONDecoder()
+	func parse(_ event: String, _ json: String) -> [StreamEvent] {
+		LLMClient.parseStreamEvent(eventType: event, data: Data(json.utf8), decoder: decoder)
+	}
+
+	let delta = parse("response.output_text.delta", """
+	{"type":"response.output_text.delta","sequence_number":3,"item_id":"msg_1","output_index":0,"content_index":1,"delta":"Hi","logprobs":[{"token":"Hi","logprob":-0.1,"bytes":[72,105],"top_logprobs":[]}]}
+	""")
+	#expect(delta.count == 2)
+	if case .contentPartDelta(let text, let index, let contentIndex) = delta[0] {
+		#expect(text == "Hi")
+		#expect(index == 0)
+		#expect(contentIndex == 1)
+	} else {
+		Issue.record("Expected contentPartDelta")
+	}
+	if case .outputTextDelta(let text, _, _, let itemId, let sequence, let logprobs) = delta[1] {
+		#expect(text == "Hi")
+		#expect(itemId == "msg_1")
+		#expect(sequence == 3)
+		#expect(logprobs?.count == 1)
+	} else {
+		Issue.record("Expected outputTextDelta")
+	}
+
+	let done = parse("response.output_text.done", """
+	{"type":"response.output_text.done","sequence_number":4,"item_id":"msg_1","output_index":0,"content_index":1,"text":"Hi"}
+	""")
+	if case .outputTextDone(let text, _, _, let itemId, let sequence, let logprobs) = done.first {
+		#expect(text == "Hi")
+		#expect(itemId == "msg_1")
+		#expect(sequence == 4)
+		#expect(logprobs == nil)
+	} else {
+		Issue.record("Expected outputTextDone")
+	}
+
+	let refusalDelta = parse("response.refusal.delta", """
+	{"type":"response.refusal.delta","sequence_number":5,"item_id":"msg_1","output_index":0,"content_index":0,"delta":"No"}
+	""")
+	if case .refusalDelta(let text, _, _, let itemId, let sequence) = refusalDelta.first {
+		#expect(text == "No")
+		#expect(itemId == "msg_1")
+		#expect(sequence == 5)
+	} else {
+		Issue.record("Expected refusalDelta")
+	}
+
+	let refusalDone = parse("response.refusal.done", """
+	{"type":"response.refusal.done","sequence_number":6,"item_id":"msg_1","output_index":0,"content_index":0,"refusal":"No"}
+	""")
+	if case .refusalDone(let text, _, _, _, let sequence) = refusalDone.first {
+		#expect(text == "No")
+		#expect(sequence == 6)
+	} else {
+		Issue.record("Expected refusalDone")
+	}
+
+	let annotation = parse("response.output_text.annotation.added", """
+	{"type":"response.output_text.annotation.added","sequence_number":7,"item_id":"msg_1","output_index":0,"content_index":0,"annotation_index":0,"annotation":{"type":"url_citation","url":"https://example.com","title":"Example","start_index":0,"end_index":2}}
+	""")
+	if case .outputTextAnnotationAdded(let value, _, _, let annotationIndex, let itemId, _) = annotation.first {
+		#expect(annotationIndex == 0)
+		#expect(itemId == "msg_1")
+		#expect(value?.url == "https://example.com")
+		#expect(value?.title == "Example")
+	} else {
+		Issue.record("Expected outputTextAnnotationAdded")
+	}
+
+	let reasoningDelta = parse("response.reasoning.delta", """
+	{"type":"response.reasoning.delta","sequence_number":8,"item_id":"rs_1","output_index":1,"content_index":0,"delta":"think"}
+	""")
+	if case .reasoningDelta(let text, let index, _, let itemId, _) = reasoningDelta.first {
+		#expect(text == "think")
+		#expect(index == 1)
+		#expect(itemId == "rs_1")
+	} else {
+		Issue.record("Expected reasoningDelta")
+	}
+
+	let reasoningDone = parse("response.reasoning.done", """
+	{"type":"response.reasoning.done","sequence_number":9,"item_id":"rs_1","output_index":1,"content_index":0,"text":"think"}
+	""")
+	if case .reasoningDone(let text, _, _, _, let sequence) = reasoningDone.first {
+		#expect(text == "think")
+		#expect(sequence == 9)
+	} else {
+		Issue.record("Expected reasoningDone")
+	}
+
+	let summaryDelta = parse("response.reasoning_summary_text.delta", """
+	{"type":"response.reasoning_summary_text.delta","sequence_number":10,"item_id":"rs_1","output_index":1,"summary_index":0,"delta":"sum"}
+	""")
+	if case .reasoningSummaryTextDelta(let text, _, let summaryIndex, _, let sequence) = summaryDelta.first {
+		#expect(text == "sum")
+		#expect(summaryIndex == 0)
+		#expect(sequence == 10)
+	} else {
+		Issue.record("Expected reasoningSummaryTextDelta")
+	}
+
+	let summaryDone = parse("response.reasoning_summary_text.done", """
+	{"type":"response.reasoning_summary_text.done","sequence_number":11,"item_id":"rs_1","output_index":1,"summary_index":0,"text":"sum"}
+	""")
+	if case .reasoningSummaryTextDone(let text, _, _, _, let sequence) = summaryDone.first {
+		#expect(text == "sum")
+		#expect(sequence == 11)
+	} else {
+		Issue.record("Expected reasoningSummaryTextDone")
+	}
+
+	let structuredError = parse("error", """
+	{"type":"error","sequence_number":12,"error":{"type":"invalid_request","code":"bad","message":"nope","param":"input"}}
+	""")
+	if case .error(let message) = structuredError.first {
+		#expect(message == "nope")
+	} else {
+		Issue.record("Expected structured error message")
+	}
+
+	let rawError = parse("error", "{\"oops\":true}")
+	if case .error(let message) = rawError.first {
+		#expect(message == "{\"oops\":true}")
+	} else {
+		Issue.record("Expected raw error fallback")
+	}
+}

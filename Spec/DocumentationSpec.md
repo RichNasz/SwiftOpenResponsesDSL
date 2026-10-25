@@ -72,7 +72,7 @@ The SKILL.md must include:
 - Installation snippet (SPM dependency + imports)
 - LLMClient initialization
 - Basic request examples (text and structured input)
-- Convenience input functions table (`System`, `Developer`, `User`, `UserImage`, `FunctionOutput`)
+- Convenience input functions table (`System`, `Developer`, `User`, `UserImage`, `FunctionOutput`, `Assistant`)
 - Configuration parameters reference table (all `ResponseConfigParameter` types with init syntax, range, and whether `try` is required)
 - Conversation continuity with `PreviousResponseId`
 - Reasoning models section (effort levels, summary types, accessing reasoning output, streaming events)
