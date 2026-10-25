@@ -27,7 +27,7 @@ For tool calling and agent capabilities, see [ToolCalling.md](ToolCalling.md) an
 - **Minimum OS Versions**: macOS 13.0, iOS 16.0.
 - **Partial server support**: A Responses endpoint does not mean the server implements the full Open Responses specification. See [Server compatibility](#server-compatibility).
 - **Optional spec elements**: Call out Open Responses optional transports, endpoints, and fields where they affect this client. See [Optional spec elements](#optional-spec-elements).
-- **Deferred**: WebSocket transport and context compaction (`POST /v1/responses/compact`) are optional additions and are not implemented. See [Not implemented](#not-implemented).
+- **Package gaps**: Open Responses functionality this package does not implement is listed in [`Unimplemented.md`](Unimplemented.md). WebSocket transport and `POST /v1/responses/compact` are the two missing endpoints. See [Not implemented](#not-implemented).
 
 ---
 
@@ -65,51 +65,21 @@ Optional, implemented, and safe for a server to omit or ignore:
 - Every other configuration parameter is optional on the request: sampling (`temperature`, `top_p`, `frequency_penalty`, `presence_penalty`), `truncation`, `service_tier`, `reasoning`, `store`, `background`, `max_output_tokens`, `max_tool_calls`, `text` (including JSON format and schema `description`), `stream_options`, `safety_identifier`, `prompt_cache_key`, `metadata`, `tools`, `tool_choice`, `previous_response_id`, `instructions`, and `parallel_tool_calls`. The client sends a field only when the caller sets it. A non-nil echo must match. A nil echo is allowed.
 - `id` and `status` on an input message, and `detail` on `input_image`, are optional.
 - Tools, image input, and reasoning are in the shared item model. A given model may still reject them with HTTP 400. The live suite allows `serverError` for vision and for object `tool_choice`.
-- Provider extension item types and extra fields are optional. The specification says portable clients ignore them. This client ignores unknown output item types and unknown keys on the fields it decodes.
+- Provider extension item types and extra fields are optional. The specification says portable clients ignore them. Unknown keys on a type this client decodes are ignored. Unknown output item types are not: decoding `output` throws. An output message content part other than `output_text` or `refusal` also throws. See [Decoded narrowly](Unimplemented.md#decoded-narrowly).
 
-Optional, and not implemented. See [Not implemented](#not-implemented):
+Optional, and not implemented. The inventory is [`Unimplemented.md`](Unimplemented.md):
 
 - WebSocket transport. The specification says servers MAY expose `/v1/responses` as a socket. HTTP remains the required transport for a Responses call.
 - `POST /v1/responses/compact` and the compaction item. The specification adds them as a separate context-compression endpoint. It does not say every Responses server MUST offer them. The required create-response exchange does not include them.
+- File input, video input, a reasoning item sent back as input, assistant refusal content on input, citations on resent assistant text, and a tool result that is not a string.
 
 ---
 
 ## Not implemented
 
-Open Responses 2026-04-24 adds two optional features this package does not implement. `LLMClient` speaks HTTP `POST` to the caller-supplied `/v1/responses` URL, with JSON or SSE. It does not open a socket, call `/v1/responses/compact`, or encode or decode a compaction item (`type: "compaction"` / `CompactionSummaryItemParam`).
+[`Unimplemented.md`](Unimplemented.md) is the inventory of Open Responses 2026-04-24 functionality this package does not implement. It separates those package gaps from servers that omit fields this client does send, and from OpenAI routes that are not in Open Responses.
 
-Checked 2026-10-25. Both features are real in the spec and in OpenAI's own API. They are not the path local and multi-provider Responses servers have taken, which is why they stay out of this package for now.
-
-### WebSocket transport
-
-This transport is optional. The specification says servers MAY expose the same `/v1/responses` resource over a WebSocket. Where a server does, the client sends `type: "response.create"` and receives the same semantic events as SSE. One connection handles one in-flight response. Continuation, a 60-minute connection limit, and structured `error` envelopes apply only on that transport. It was added on 2026-04-24.
-
-This client does not implement it. Streaming stays HTTP SSE.
-
-Uptake is still thin outside OpenAI:
-
-- The [compliance suite](https://www.openresponses.org/compliance) keeps its seven WebSocket tests CLI-only. The browser suite does not run them. A 2026-10-23 write-up of the project notes the same split, and that client-side compliance tests are still missing.
-- The AWS Open Source post on 2026-10-22 still calls WebSocket transport a recent addition. It lists Ollama, vLLM, OpenRouter, and Hugging Face as servers of the shared HTTP format.
-- LM Studio's developer docs list HTTP endpoints (`/v1/responses`, chat, embeddings, completions, decisions, models). They do not list a Responses WebSocket. The local suite in [`LiveTesting.md`](LiveTesting.md) is that HTTP server.
-- Ollama's Responses support is HTTP. Its public streaming docs are newline-delimited JSON or SSE on HTTP, not `response.create` over a socket.
-- vLLM's Responses router is HTTP `POST /v1/responses` (and response retrieval). Its WebSocket work is a separate Realtime API at `/v1/realtime`, not this transport.
-
-OpenAI documents WebSocket mode for its own Responses API, and a few gateways have started to follow that client. That is not evidence that the local servers this package targets accept the socket.
-
-### Context compaction (compression)
-
-This endpoint is optional relative to `POST /v1/responses`. `POST /v1/responses/compact` returns a compacted conversation (`object: "response.compaction"`), not a response id. The [reference](https://www.openresponses.org/reference) describes it as preserving long-running context without defining provider-specific compression. A later turn sends that window as `input`. On a WebSocket, the next `response.create` omits `previous_response_id`. The endpoint and the compaction item were added on 2026-04-24. The compliance suite does include HTTP compaction tests.
-
-This client does not call that endpoint and does not model the compaction item. Callers who need a shorter window send a shorter `input` themselves.
-
-Uptake is concentrated on OpenAI and on proxies in front of OpenAI, not on local inference:
-
-- OpenAI's API and SDKs implement `responses.compact`. Codex clients call it. Gateway projects (CLIProxyAPI, sub2api, axonhub, llmrouter, and similar) added the route in 2026 so those clients keep working. Several of those changes are fallbacks for upstreams that reject the call.
-- LM Studio's published endpoint list has `POST /v1/responses` and no `/v1/responses/compact`. The January 2026 Open Responses post covers logprobs, cache stats, and image URLs.
-- Ollama and vLLM document HTTP `/v1/responses`. Public comparisons of those servers with LM Studio list that HTTP route and do not list compaction.
-- The same 2026-10-22 AWS post calls the compaction endpoint a recent addition, alongside WebSocket transport.
-
-Revisit both when a server this package is tested against, starting with the LM Studio host in [`LiveTesting.md`](LiveTesting.md), documents and answers the WebSocket or `POST /v1/responses/compact`.
+`LLMClient` speaks HTTP `POST` to the caller-supplied `/v1/responses` URL, with JSON or SSE. It does not open a WebSocket and does not call `POST /v1/responses/compact`. Those two are optional in the specification. The uptake note, and the rest of the missing item and content model, are on that page.
 
 ---
 

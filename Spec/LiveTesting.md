@@ -4,7 +4,7 @@ Live tests exercise the implemented client against a local Open Responses server
 
 Not every inference server that has a Responses API implements the full Open Responses specification. The fields this suite treats loosely are optional in that spec. See [Optional spec elements](SwiftOpenResponsesDSL.md#optional-spec-elements). This suite is the example. The default server is LM Studio. It accepts the calls and returns a decoded `ResponseObject`, and the rules below record where it omits, rewrites, or rejects those optional fields. A nil echo or an allowed `serverError` is that server's limit. `decodingFailed` and `networkError` are client failures.
 
-WebSocket transport and context compaction (`POST /v1/responses/compact`) are optional Open Responses additions and are not implemented. See [Not implemented](SwiftOpenResponsesDSL.md#not-implemented). The live suite does not open a socket or call that endpoint. LM Studio's documented Responses surface is HTTP `POST /v1/responses`, which matches that deferral. Stream and output cases the client can decode but a cooperative local model cannot be required to emit — refusal, URL citation, `queued`, `incomplete`, and `failed` — stay in the unit tests.
+WebSocket transport, context compaction (`POST /v1/responses/compact`), and the other Open Responses surfaces this package does not implement are listed in [`Unimplemented.md`](Unimplemented.md). The live suite does not call them. LM Studio's documented Responses surface is HTTP `POST /v1/responses`. Stream and output cases the client can decode but a cooperative local model cannot be required to emit — refusal, URL citation, `queued`, `incomplete`, and `failed` — stay in the unit tests.
 
 ## Default server
 
