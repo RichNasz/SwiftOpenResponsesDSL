@@ -33,6 +33,9 @@ Uses `previous_response_id` instead of re-sending history:
 ### Dependencies
 - `SwiftLLMToolMacros` — JSONSchema types and `@LLMTool` macro support
 
+### Agent Skills
+Published copies live in `skills/`. `.grok/skills/` symlinks them so Grok Build discovers `using-swift-open-responses-dsl` and `design-responses-app`. Edit the files under `skills/`.
+
 ### Build & Test
 ```bash
 swift build

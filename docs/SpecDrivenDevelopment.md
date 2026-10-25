@@ -75,13 +75,13 @@ You write code manually using the [README](../README.md) as reference. The DSL w
 
 ## Getting Started
 
-1. **Install the Agent Skills** (optional) -- copy the skill folders from `.build/checkouts/` into your project's `skills/` directory. This includes both DSL skills (`using-swift-open-responses-dsl`, `design-responses-app`) and macro skills (`using-swift-llm-tool-macros`, `design-llm-tool`). See the [README](../README.md#installing-the-skills) for exact commands and Claude Code setup instructions.
+1. **Install the Agent Skills** (optional) -- copy the skill folders from `.build/checkouts/` into the directory your agent scans: `skills/` for Claude Code, `.grok/skills/` for Grok Build. This includes both DSL skills (`using-swift-open-responses-dsl`, `design-responses-app`) and macro skills (`using-swift-llm-tool-macros`, `design-llm-tool`). See the [README](../README.md#installing-the-skills) for the copy commands.
 
 2. **Write a WHAT spec** -- describe the application, its tools, conversation requirements, and acceptance criteria. See [`Examples/Specs/WeatherAssistant-WHAT.md`](../Examples/Specs/WeatherAssistant-WHAT.md) for a template.
 
 3. **Write a HOW spec** -- translate the WHAT into DSL-specific implementation guidance. See [`Examples/Specs/WeatherAssistant-HOW.md`](../Examples/Specs/WeatherAssistant-HOW.md) for a template.
 
-4. **Ask your agent to implement** -- point the agent at the HOW spec and review the generated code. In Claude Code, you can invoke the skill directly with `/skill design-responses-app` to ensure the agent has the correct design process loaded.
+4. **Ask your agent to implement** -- point the agent at the HOW spec and review the generated code. Invoke the design skill directly when you want that process loaded: `/design-responses-app` in Grok Build, or `/skill design-responses-app` in Claude Code.
 
 ## Example
 

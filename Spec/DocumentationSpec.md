@@ -117,9 +117,10 @@ The README's "Agent Skill" section must:
 - Note that only agents implementing the [agentskills.io](https://agentskills.io) spec can use skills
 - List every skill in the `skills/` directory by name with its role (reference vs process) — a table is preferred
 - Explain that adding an SPM dependency does not make skills discoverable — SPM downloads sources into `.build/checkouts/`, which agents don't scan
-- Include a `swift package resolve` step and `mkdir -p skills` before the copy commands
-- Provide individual install commands for each skill (one `cp` per skill directory), covering both this package's skills AND the SwiftLLMToolMacros dependency's skills
+- Include a `swift package resolve` step, then `mkdir -p skills` before the Claude Code copy commands and `mkdir -p .grok/skills` before the Grok Build copy commands
+- Provide individual install commands for each skill (one `cp` per skill directory), covering both this package's skills AND the SwiftLLMToolMacros dependency's skills, once into `skills/` and once into `.grok/skills/`
 - Show a summary table of all four skills with their source package and role
+- Include a "Using Skills with Grok Build" subsection explaining: automatic discovery from `.grok/skills/`, manual invocation via `/using-swift-open-responses-dsl` and `/design-responses-app`, verification with `grok inspect`, and an `AGENTS.md` or `[skills] paths` fallback for non-standard layouts
 - Include a "Using Skills with Claude Code" subsection explaining: automatic discovery from `skills/`, manual invocation via `/skill`, verification, and `CLAUDE.md` fallback for non-standard layouts
 - Include a "Spec-Driven Development" subsection linking to `docs/SpecDrivenDevelopment.md` and `Examples/Specs/`
 

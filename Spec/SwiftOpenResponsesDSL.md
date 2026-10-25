@@ -564,14 +564,16 @@ actor LLMClient {
 
 ---
 
-## Claude Files
+## Agent Instruction Files
 
-Only the following Claude-related files belong in this repository:
+Only the following agent-instruction files belong in this repository:
 
-- **`CLAUDE.md`** — Project instructions loaded automatically into every Claude Code session.
-- **Claude skills** (`.claude/commands/` scripts) — Reusable slash commands scoped to this project.
+- **`AGENTS.md`** — Project instructions loaded automatically into every Grok Build session. Do not also commit `CLAUDE.md`; Grok loads both when they are separate files.
+- **`skills/`** — Published Agent Skills (`using-swift-open-responses-dsl`, `design-responses-app`). Edit these copies.
+- **`.grok/skills/`** — Symlinks to `skills/` so Grok Build discovers the same skills while working in this repo.
 
 Do **not** commit:
 - Memory files or session state (e.g., `.claude/projects/` auto-memory)
+- Personal permission overrides (e.g., `.claude/settings.local.json`)
 - Files containing personally identifiable information (names, API keys, email addresses, user paths)
 - Files that are only meaningful on a specific local machine (absolute paths, local config overrides)

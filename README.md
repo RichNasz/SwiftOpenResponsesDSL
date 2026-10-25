@@ -185,7 +185,7 @@ print(reply)
 
 ## Agent Skill
 
-This project includes [Agent Skills](https://agentskills.io) for AI coding assistants. Skills are optional — the package works the same without them. Skills are only useful if you use an agent that implements the [agentskills.io](https://agentskills.io) specification (Claude Code, Cursor, Gemini CLI, etc.).
+This project includes [Agent Skills](https://agentskills.io) for AI coding assistants. Skills are optional — the package works the same without them. Skills are only useful if you use an agent that implements the [agentskills.io](https://agentskills.io) specification (Grok Build, Claude Code, Cursor, Gemini CLI, etc.).
 
 | Skill | Role | Path |
 |---|---|---|
@@ -209,7 +209,9 @@ Adding SwiftOpenResponsesDSL as an SPM dependency does **not** make the skills a
 swift package resolve
 ```
 
-**Step 2:** Copy all four skills into your project's `skills/` directory:
+**Step 2:** Copy all four skills into the directory your agent scans.
+
+Claude Code and other agents that scan a repo-root `skills/` directory:
 
 ```bash
 mkdir -p skills
@@ -227,6 +229,22 @@ cp -r .build/checkouts/SwiftLLMToolMacros/skills/design-llm-tool \
       skills/design-llm-tool
 ```
 
+Grok Build scans `.grok/skills/`, not `skills/`:
+
+```bash
+mkdir -p .grok/skills
+
+cp -r .build/checkouts/SwiftOpenResponsesDSL/skills/using-swift-open-responses-dsl \
+      .grok/skills/using-swift-open-responses-dsl
+cp -r .build/checkouts/SwiftOpenResponsesDSL/skills/design-responses-app \
+      .grok/skills/design-responses-app
+
+cp -r .build/checkouts/SwiftLLMToolMacros/skills/using-swift-llm-tool-macros \
+      .grok/skills/using-swift-llm-tool-macros
+cp -r .build/checkouts/SwiftLLMToolMacros/skills/design-llm-tool \
+      .grok/skills/design-llm-tool
+```
+
 This installs all four complementary skills:
 
 | Skill | Package | Role |
@@ -237,6 +255,26 @@ This installs all four complementary skills:
 | `design-llm-tool` | SwiftLLMToolMacros | Process: designing a tool struct |
 
 Install all four for the best experience, or pick only the ones relevant to your workflow.
+
+### Using Skills with Grok Build
+
+[Grok Build](https://x.ai) discovers project skills from `.grok/skills/<name>/SKILL.md`. After copying the skill folders there, Grok loads a skill when the task matches its description.
+
+Invoke a skill directly:
+
+```
+/using-swift-open-responses-dsl
+/design-responses-app
+```
+
+To verify, run `grok inspect` and confirm both skills are listed.
+
+**Tip:** If the skills live outside `.grok/skills/`, add that directory under `[skills] paths` in `~/.grok/config.toml`, or point at it from the project's `AGENTS.md`:
+
+```markdown
+## Skills
+See `path/to/skills/` for Agent Skills that provide SwiftOpenResponsesDSL and SwiftLLMToolMacros API knowledge.
+```
 
 ### Using Skills with Claude Code
 
