@@ -11,7 +11,9 @@ The root README.md file must include the following sections in order:
 
 1. **Package Title and Badge Section**
    - Project name and brief tagline
-   - Swift version badge, platform badges
+   - Swift version badge, platform badges, license badge
+   - A "Built with Grok Build" badge linking to the Grok Build repository (`https://github.com/xai-org/grok-build`). Shields.io has no Grok logo, so the badge is text-only.
+   - No "Built with Claude Code" badge. That badge reads as the current toolchain. Claude Code created the project initially; say that in one sentence under the tagline, and state that ongoing maintenance uses Grok Build and the latest Grok model available.
 
 2. **Overview Section**
    - Clear description of what SwiftOpenResponsesDSL does

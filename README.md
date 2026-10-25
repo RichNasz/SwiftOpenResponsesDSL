@@ -3,9 +3,11 @@
 [![Swift 6.2](https://img.shields.io/badge/Swift-6.2-orange.svg)](https://swift.org)
 [![Platform](https://img.shields.io/badge/Platform-macOS%2013%20%7C%20iOS%2016-lightgrey.svg)](Package.swift)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Built with Claude Code](https://img.shields.io/badge/Built%20with-Claude%20Code-blueviolet?logo=claude)](https://claude.ai/code)
+[![Built with Grok Build](https://img.shields.io/badge/Built%20with-Grok%20Build-111111)](https://github.com/xai-org/grok-build)
 
 A Swift DSL for the [Open Responses API](https://www.openresponses.org/) -- a multi-provider, interoperable LLM interface specification. Build type-safe LLM requests with result builders, streaming, tool calling, and conversation continuity via `previous_response_id`.
+
+Initially created with Claude Code. Ongoing maintenance uses [Grok Build](https://github.com/xai-org/grok-build) and the latest Grok model available.
 
 ## Overview
 

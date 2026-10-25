@@ -564,11 +564,17 @@ actor LLMClient {
 
 ---
 
+## Maintenance Tooling
+
+Claude Code was used to create this project initially. The committer has moved maintenance and expansion to Grok Build. When a session needs a model, use the latest Grok model available. Do not treat Claude Code as the current toolchain.
+
+`AGENTS.md` must state this so every Grok Build session follows it. The README badge row shows Grok Build only; the Claude Code history stays in prose.
+
 ## Agent Instruction Files
 
 Only the following agent-instruction files belong in this repository:
 
-- **`AGENTS.md`** — Project instructions loaded automatically into every Grok Build session. Do not also commit `CLAUDE.md`; Grok loads both when they are separate files.
+- **`AGENTS.md`** — Project instructions loaded automatically into every Grok Build session, including the maintenance-tooling rule above. Do not also commit `CLAUDE.md`; Grok loads both when they are separate files.
 - **`skills/`** — Published Agent Skills (`using-swift-open-responses-dsl`, `design-responses-app`). Edit these copies.
 - **`.grok/skills/`** — Symlinks to `skills/` so Grok Build discovers the same skills while working in this repo.
 

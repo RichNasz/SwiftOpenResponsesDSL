@@ -1,5 +1,9 @@
 # SwiftOpenResponsesDSL
 
+## Maintenance
+
+Claude Code created this project initially. Maintain and expand it with Grok Build. When a model is required, use the latest Grok model available.
+
 ## Architecture
 
 SwiftOpenResponsesDSL provides direct access to [Open Responses API](https://www.openresponses.org/) endpoints — a multi-provider, interoperable LLM interface specification. Other packages may reference this package to build higher-level integrations (e.g., [SwiftOpenResponsesLanguageModel](https://github.com/RichNasz/SwiftOpenResponsesLanguageModel)).
