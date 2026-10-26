@@ -24,9 +24,21 @@ Key features:
 - **Conversation continuity** -- Chain responses with `previous_response_id` instead of re-sending full message history
 - **Actor-based client** -- Thread-safe `LLMClient` actor for concurrent usage
 
-A server that exposes a Responses endpoint may not implement the full specification. Optional Open Responses elements are the ones that vary: assistant `phase`, output-text `logprobs`, and the other request configuration fields. A server may omit them. This package sends and decodes the optional HTTP fields it implements, and it accepts a response that omits them. The list is [Optional spec elements](Spec/SwiftOpenResponsesDSL.md#optional-spec-elements). The client contract is in [`Spec/SwiftOpenResponsesDSL.md`](Spec/SwiftOpenResponsesDSL.md). `swift test` runs the live suite against LM Studio at `http://127.0.0.1:1234` with model `openai/gpt-oss-20b`. That server accepts the calls and returns a decoded response, and it skips some of those optional fields: it can omit `safety_identifier` and `prompt_cache_key`, rewrite `frequency_penalty` and `service_tier`, reject `item_reference` and object `tool_choice` with HTTP 400, ignore JSON `text.format`, return empty `logprobs`, and put reasoning on the completed response without reasoning deltas. The test rules are in [`Spec/LiveTesting.md`](Spec/LiveTesting.md).
+A server that exposes a Responses endpoint may not implement the full specification. Optional Open Responses elements are the ones that vary: assistant `phase`, output-text `logprobs`, and the other request configuration fields. A server may omit them. This package sends and decodes the optional HTTP fields it implements, and it accepts a response that omits them. The list is [Optional spec elements](Spec/SwiftOpenResponsesDSL.md#optional-spec-elements). The client contract is in [`Spec/SwiftOpenResponsesDSL.md`](Spec/SwiftOpenResponsesDSL.md). `swift test` runs the live suite against LM Studio at `http://127.0.0.1:1234` with model `openai/gpt-oss-20b`. That server accepts the calls and returns a decoded response, and it skips some of those optional fields: it can omit `safety_identifier` and `prompt_cache_key`, rewrite `frequency_penalty` and `service_tier`, reject `item_reference` and object `tool_choice` with HTTP 400, ignore JSON `text.format`, return empty `logprobs`, and put reasoning on the completed response without reasoning deltas. The test rules are in [`Spec/LiveTesting.md`](Spec/LiveTesting.md). Package gaps are in [Not implemented](#not-implemented).
 
-Streaming in this package is HTTP server-sent events. The package does not cover every Open Responses surface. WebSocket transport, context compaction (`POST /v1/responses/compact`), video input, reasoning-item round-trip, and non-string tool output are not implemented. Unknown output item types fail decoding. They are not ignored. The inventory is [`Spec/Unimplemented.md`](Spec/Unimplemented.md).
+## Not implemented
+
+Streaming in the examples below is HTTP server-sent events. This package does not implement every Open Responses surface:
+
+- WebSocket transport
+- Context compaction (`POST /v1/responses/compact`)
+- Video input
+- Sending a reasoning item back on a later turn
+- A tool result that is not a string
+
+An unknown output item type fails decoding.
+
+Details are in [`Spec/Unimplemented.md`](Spec/Unimplemented.md).
 
 ## Quick Start
 

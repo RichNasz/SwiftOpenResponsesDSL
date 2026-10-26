@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - Usage examples use the current initializers. Throwing configuration values use `try`. Examples include `prewarm`, `UserFile`, text-inference fields, assistant `phase`, and `await` on `Agent.stream`. `TranscriptEntry` switches include `.reasoning`.
+- The README has a **Not implemented** summary that links to `Spec/Unimplemented.md`.
 - `Spec/Unimplemented.md` lists the Open Responses 2026-04-24 functionality this package does not implement, including WebSocket transport, compaction, video input, reasoning-item round-trip, and non-string tool output. Unknown output item types fail decoding. See that page. Optional HTTP fields this package does implement may still be omitted by a server. See `Spec/SwiftOpenResponsesDSL.md`.
 
 ## [0.2.0] - 2026-06-12

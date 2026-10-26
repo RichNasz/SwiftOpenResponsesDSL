@@ -20,14 +20,19 @@ The root README.md file must include the following sections in order:
    - Brief explanation of the Open Responses API
    - Key benefits and use cases, including text inference from Open Responses 2026-04-24: `top_logprobs`, `safety_identifier`, `prompt_cache_key`, `stream_options`, assistant message `phase`, output-text logprobs, and the text streaming events (`output_text.done`, refusal, annotation, reasoning text, reasoning-summary text)
    - A comment that a Responses endpoint may not implement the full specification. Use LM Studio local testing as the example: `swift test` against `http://127.0.0.1:1234` and `openai/gpt-oss-20b`, with a link to `Spec/LiveTesting.md`. Name the gaps that server shows: omitted `safety_identifier` and `prompt_cache_key`, rewritten `frequency_penalty` and `service_tier`, HTTP 400 on `item_reference` and object `tool_choice`, ignored JSON `text.format`, empty `logprobs`, and reasoning on the completed response without reasoning deltas. Point to `Spec/SwiftOpenResponsesDSL.md` for the client contract. Do not copy the live-test tables into the README.
-   - A short note that this package does not cover every Open Responses surface. Name WebSocket transport, context compaction (`POST /v1/responses/compact`), video input, reasoning-item round-trip, and non-string tool output. State that unknown output item types fail decoding and are not ignored. Streaming in the examples is HTTP SSE. Link [`Spec/Unimplemented.md`](Unimplemented.md). Do not copy that page's tables or its uptake note into the README. Do not describe those package gaps as server limits.
    - A short note that other Open Responses elements are optional and relevant: assistant `phase`, output-text `logprobs`, and the request configuration fields. A server may omit them. Link [Optional spec elements](SwiftOpenResponsesDSL.md#optional-spec-elements). Do not copy that list into the README.
+   - Point to the **Not implemented** section for package gaps. Keep server omissions in this section.
 
-3. **Quick Start Section**
+3. **Not implemented**
+   - A heading of its own, after Overview and before Quick Start.
+   - A short summary, as a bullet list, of the Open Responses surfaces this package does not implement: WebSocket transport, context compaction (`POST /v1/responses/compact`), video input, reasoning-item round-trip, and non-string tool output. State that unknown output item types fail decoding. State that streaming in the examples is HTTP server-sent events.
+   - Link [`Spec/Unimplemented.md`](Unimplemented.md) for the inventory. Do not copy that page's tables or its uptake note. Do not describe those package gaps as server limits.
+
+4. **Quick Start Section**
    - Installation instructions (Swift Package Manager)
    - Minimal working example
 
-4. **Usage Examples Section**
+5. **Usage Examples Section**
    - Basic non-streaming example with explanation
    - Basic streaming example with explanation
    - Conversation continuity with previous_response_id
@@ -36,7 +41,7 @@ The root README.md file must include the following sections in order:
    - File input with `UserFile` (`filename`, `fileData`, `fileURL`; nil fields omitted)
    - Text inference: `TopLogprobs`, `SafetyIdentifier`, `PromptCacheKey`, `StreamOptions`, and an assistant message resent with `phase`
 
-5. **Requirements Section**
+6. **Requirements Section**
    - Swift version requirements
    - Platform support (macOS, iOS versions)
    - Dependencies
