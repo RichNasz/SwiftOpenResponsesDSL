@@ -48,7 +48,7 @@ Add SwiftOpenResponsesDSL to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/RichNasz/SwiftOpenResponsesDSL.git", from: "0.2.0")
+    .package(url: "https://github.com/RichNasz/SwiftOpenResponsesDSL.git", from: "0.3.0")
 ]
 ```
 

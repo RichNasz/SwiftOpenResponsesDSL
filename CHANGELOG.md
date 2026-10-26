@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-25
+
 ### Added
 
 - File input encoding: `UserFile` and `InputContentPart.inputFile` send `InputFileContentParam` (`filename`, `file_data`, `file_url`). Nil fields are omitted. An `input_file` part on an output message still fails decoding.
