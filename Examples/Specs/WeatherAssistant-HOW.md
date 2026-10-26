@@ -112,8 +112,8 @@ do {
     // retry
 } catch LLMError.serverError(let code, let message) {
     showError("Server error \(code)")
-} catch LLMError.networkError {
-    showError("Network unavailable. Check your connection.")
+} catch LLMError.networkError(let message) {
+    showError("Network unavailable. Check your connection. \(message)")
 } catch {
     showError("Something went wrong: \(error.localizedDescription)")
 }

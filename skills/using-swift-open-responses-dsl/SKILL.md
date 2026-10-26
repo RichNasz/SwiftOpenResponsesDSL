@@ -16,8 +16,8 @@ Add to `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/RichNasz/SwiftOpenResponsesDSL.git", from: "0.1.0"),
-    .package(url: "https://github.com/RichNasz/SwiftLLMToolMacros.git", from: "0.1.0")
+    .package(url: "https://github.com/RichNasz/SwiftOpenResponsesDSL.git", from: "0.2.0"),
+    .package(url: "https://github.com/RichNasz/SwiftLLMToolMacros.git", from: "0.2.0")
 ]
 ```
 
@@ -67,6 +67,28 @@ let request = try ResponseRequest(model: "gpt-4o") {
 }
 let response = try await client.send(request)
 ```
+
+File input and text-inference fields:
+
+```swift
+let request = try ResponseRequest(model: "gpt-4o", stream: true, config: {
+    try TopLogprobs(5)
+    try SafetyIdentifier("user-42")
+    try PromptCacheKey("cache-abc")
+    StreamOptions(includeObfuscation: false)
+}) {
+    UserFile(filename: "notes.txt", fileURL: "https://example.com/notes.txt")
+    Assistant("Draft answer", phase: .commentary, id: "msg_1")
+    User("Revise the draft using the file.")
+}
+for try await event in client.stream(request) {
+    if case .contentPartDelta(let delta, _, _) = event {
+        print(delta, terminator: "")
+    }
+}
+```
+
+Nil `UserFile` fields are omitted. Resend `phase` when a later turn includes prior assistant text. Read `stream: true` with `client.stream`. A server may omit these optional fields.
 
 ### Convenience Input Functions
 

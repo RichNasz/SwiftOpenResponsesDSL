@@ -14,6 +14,8 @@ Shorthand constructors for common message roles:
 System("You are a helpful assistant.")    // InputItem.message(InputMessage(role: .system, ...))
 Developer("Follow these rules.")          // InputItem.message(InputMessage(role: .developer, ...))
 User("What's the weather?")              // InputItem.message(InputMessage(role: .user, ...))
+UserFile(filename: "notes.txt", fileURL: "https://example.com/notes.txt")  // input_file; nil fields omitted
+Assistant("Draft", phase: .commentary, id: "msg_1")  // output_text part; resend phase on later turns
 FunctionOutput(callId: "call_1", output: "{\"temp\": 72}")  // InputItem.functionCallOutput(...)
 ```
 
@@ -65,9 +67,9 @@ let weatherTool = FunctionToolParam(
 ### ResponseRequest with Tools
 
 ```swift
-let request = try ResponseRequest(model: "gpt-4o") {
+let request = try ResponseRequest(model: "gpt-4o", config: {
     try Temperature(0.2)
-} input: {
+}) {
     System("You are a helpful assistant.")
     User("Weather in Alpharetta?")
 }
@@ -166,7 +168,7 @@ let agent = try Agent(client: client, model: "gpt-4o", instructions: "You are he
 
 **Streaming**:
 ```swift
-for try await event in agent.stream("Weather in Paris?") {
+for try await event in await agent.stream("Weather in Paris?") {
     if case .llm(.contentPartDelta(let delta, _, _)) = event {
         print(delta, terminator: "")
     }

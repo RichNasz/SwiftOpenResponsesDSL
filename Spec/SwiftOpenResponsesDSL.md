@@ -630,25 +630,29 @@ actor LLMClient {
 
 ## Usage Examples
 
+Calls below use the current initializers. `text:` stays inside the parentheses. A trailing closure after `config:` is the input builder. Throwing configuration values use `try`.
+
 1. **Non-Streaming** (text input):
    ```swift
    let client = try LLMClient(baseURL: "https://api.openai.com/v1/responses", apiKey: "sk-...")
+   await client.prewarm()
    let response = try await client.send(
-       try ResponseRequest(model: "gpt-4o") {
+       try ResponseRequest(model: "gpt-4o", config: {
            try Temperature(0.7)
            try MaxOutputTokens(150)
-       } text: "Explain Swift concurrency."
+       }, text: "Explain Swift concurrency.")
    )
    print(response.firstOutputText ?? "No response")
    ```
+   `prewarm` sends `GET` on this client's session and returns after the request starts. Open Responses has no prewarm operation.
 
 2. **Structured Input**:
    ```swift
    let response = try await client.send(
-       try ResponseRequest(model: "gpt-4o") {
+       try ResponseRequest(model: "gpt-4o", config: {
            try Temperature(0.7)
-           Instructions("You are a coding assistant.")
-       } input: {
+           try Instructions("You are a coding assistant.")
+       }) {
            System("You are a coding assistant.")
            User("Explain Swift concurrency.")
        }
@@ -658,9 +662,9 @@ actor LLMClient {
 3. **Streaming**:
    ```swift
    let stream = client.stream(
-       try ResponseRequest(model: "gpt-4o", stream: true) {
+       try ResponseRequest(model: "gpt-4o", stream: true, config: {
            try Temperature(0.8)
-       } text: "Write a poem."
+       }, text: "Write a poem.")
    )
    for try await event in stream {
        if case .contentPartDelta(let delta, _, _) = event {
@@ -668,23 +672,24 @@ actor LLMClient {
        }
    }
    ```
+   `response.output_text.delta` also yields `outputTextDelta` when `item_id` and `sequence_number` are present.
 
 4. **Conversation Continuity**:
    ```swift
    let response1 = try await client.send(
-       try ResponseRequest(model: "gpt-4o") text: "What is Swift?"
+       try ResponseRequest(model: "gpt-4o", text: "What is Swift?")
    )
    let response2 = try await client.send(
-       try ResponseRequest(model: "gpt-4o") {
-           PreviousResponseId(response1.id)
-       } text: "Tell me more about its type system."
+       try ResponseRequest(model: "gpt-4o", config: {
+           try PreviousResponseId(response1.id)
+       }, text: "Tell me more about its type system.")
    )
    ```
 
 5. **Token Usage**:
    ```swift
    let response = try await client.send(
-       try ResponseRequest(model: "gpt-4o") text: "Explain optionals."
+       try ResponseRequest(model: "gpt-4o", text: "Explain optionals.")
    )
    if let usage = response.usage {
        print("Input tokens:  \(usage.inputTokens)")
@@ -694,6 +699,38 @@ actor LLMClient {
    // Convenience property (returns 0 if usage is nil):
    print("Total: \(response.totalTokens)")
    ```
+
+6. **File input**:
+   ```swift
+   let response = try await client.send(
+       try ResponseRequest(model: "gpt-4o") {
+           UserFile(filename: "notes.txt", fileData: "aGVsbG8=", fileURL: "https://example.com/notes.txt")
+           User("Summarize this file.")
+       }
+   )
+   ```
+   Nil `filename`, `fileData`, and `fileURL` are omitted. An `input_file` part on an output message still fails decoding.
+
+7. **Text inference**:
+   ```swift
+   let stream = client.stream(
+       try ResponseRequest(model: "gpt-4o", stream: true, config: {
+           try TopLogprobs(5)
+           try SafetyIdentifier("user-42")
+           try PromptCacheKey("cache-abc")
+           StreamOptions(includeObfuscation: false)
+       }) {
+           Assistant("Draft answer", phase: .commentary, id: "msg_1")
+           User("Revise the draft.")
+       }
+   )
+   for try await event in stream {
+       if case .contentPartDelta(let delta, _, _) = event {
+           print(delta, terminator: "")
+       }
+   }
+   ```
+   Resend `phase` on a later turn that includes prior assistant text. `stream: true` is read with `client.stream`. A server may omit these optional fields.
 
 ---
 

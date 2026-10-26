@@ -58,15 +58,20 @@ let client = try LLMClient(
     baseURL: "https://api.openai.com/v1/responses",
     apiKey: "your-api-key"
 )
+await client.prewarm()
 
 let request = try ResponseRequest(model: "gpt-4o", text: "Hello, world!")
 let response = try await client.send(request)
 print(response.firstOutputText ?? "No response")
 ```
 
+`prewarm` sends `GET` on this client's session and returns after the request starts. Open Responses has no prewarm operation.
+
 ## Usage Examples
 
 ### Basic Non-Streaming
+
+Call `await client.prewarm()` once after creating the client. It sends `GET` on that client's session and returns after the request starts. Open Responses has no prewarm operation.
 
 Use the text initializer for simple prompts, or the `@InputBuilder` for structured conversations:
 
@@ -117,6 +122,40 @@ let followUp = try ResponseRequest(model: "gpt-4o", config: {
 }, text: "What is my name?")
 let followUpResponse = try await client.send(followUp)
 print(followUpResponse.firstOutputText ?? "")
+```
+
+### File Input
+
+`UserFile` sends an `input_file` part. Nil fields are omitted.
+
+```swift
+let request = try ResponseRequest(model: "gpt-4o") {
+    UserFile(filename: "notes.txt", fileData: "aGVsbG8=", fileURL: "https://example.com/notes.txt")
+    User("Summarize this file.")
+}
+let response = try await client.send(request)
+print(response.firstOutputText ?? "")
+```
+
+### Text Inference
+
+Set the Open Responses 2026-04-24 fields you need. Resend `phase` when a later turn includes prior assistant text. A server may omit these optional fields.
+
+```swift
+let request = try ResponseRequest(model: "gpt-4o", stream: true, config: {
+    try TopLogprobs(5)
+    try SafetyIdentifier("user-42")
+    try PromptCacheKey("cache-abc")
+    StreamOptions(includeObfuscation: false)
+}) {
+    Assistant("Draft answer", phase: .commentary, id: "msg_1")
+    User("Revise the draft.")
+}
+for try await event in client.stream(request) {
+    if case .contentPartDelta(let delta, _, _) = event {
+        print(delta, terminator: "")
+    }
+}
 ```
 
 ### Tool Calling

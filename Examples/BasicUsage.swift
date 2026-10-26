@@ -14,6 +14,7 @@ import SwiftOpenResponsesDSL
 
 func basicTextRequest() async throws {
 	let client = try LLMClient(baseURL: "https://api.openai.com/v1/responses", apiKey: "sk-...")
+	await client.prewarm()
 
 	let response = try await client.send(
 		try ResponseRequest(model: "gpt-4o", config: {
@@ -81,7 +82,7 @@ func conversationContinuity() async throws {
 	// Follow-up using previous_response_id
 	let response2 = try await client.send(
 		try ResponseRequest(model: "gpt-4o", config: {
-			PreviousResponseId(response1.id)
+			try PreviousResponseId(response1.id)
 		}, text: "Tell me more about its type system.")
 	)
 	print("Response 2: \(response2.firstOutputText ?? "")")
@@ -153,6 +154,8 @@ func agentExample() async throws {
 			print("Assistant: \(msg)")
 		case .toolCall(let name, let args):
 			print("Tool call: \(name)(\(args))")
+		case .reasoning(let item):
+			print("Reasoning: \(item.summaryText ?? item.contentText ?? "")")
 		case .toolResult(let name, let result, let duration):
 			print("Tool result: \(name) -> \(result) (\(duration))")
 		case .error(let msg):
@@ -174,4 +177,41 @@ func reasoningExample() async throws {
 	)
 
 	print(response.firstOutputText ?? "No response")
+}
+
+// MARK: - File Input
+
+func fileInputRequest() async throws {
+	let client = try LLMClient(baseURL: "https://api.openai.com/v1/responses", apiKey: "sk-...")
+
+	let response = try await client.send(
+		try ResponseRequest(model: "gpt-4o") {
+			UserFile(filename: "notes.txt", fileData: "aGVsbG8=", fileURL: "https://example.com/notes.txt")
+			User("Summarize this file.")
+		}
+	)
+
+	print(response.firstOutputText ?? "No response")
+}
+
+// MARK: - Text Inference
+
+func textInferenceRequest() async throws {
+	let client = try LLMClient(baseURL: "https://api.openai.com/v1/responses", apiKey: "sk-...")
+
+	let request = try ResponseRequest(model: "gpt-4o", stream: true, config: {
+		try TopLogprobs(5)
+		try SafetyIdentifier("user-42")
+		try PromptCacheKey("cache-abc")
+		StreamOptions(includeObfuscation: false)
+	}) {
+		Assistant("Draft answer", phase: .commentary, id: "msg_1")
+		User("Revise the draft.")
+	}
+
+	for try await event in client.stream(request) {
+		if case .contentPartDelta(let delta, _, _) = event {
+			print(delta, terminator: "")
+		}
+	}
 }

@@ -32,6 +32,9 @@ The root README.md file must include the following sections in order:
    - Basic streaming example with explanation
    - Conversation continuity with previous_response_id
    - Tool calling example
+   - `LLMClient.prewarm()` before a request
+   - File input with `UserFile` (`filename`, `fileData`, `fileURL`; nil fields omitted)
+   - Text inference: `TopLogprobs`, `SafetyIdentifier`, `PromptCacheKey`, `StreamOptions`, and an assistant message resent with `phase`
 
 5. **Requirements Section**
    - Swift version requirements
@@ -62,6 +65,7 @@ All code examples in documentation must follow these standards:
 - **Complete Examples**: Provide runnable code when possible
 - **Error Handling**: Show proper error handling patterns
 - **Formatting**: Use consistent indentation (tab) and Swift naming conventions
+- **Current calls**: Snippets use the current initializers. `text:` and an array `input:` stay inside the parentheses. A single trailing closure is the input builder. Config and input together use `config:` inside the parentheses, or a trailing config closure plus a labeled `input:` closure. Throwing configuration values use `try`, including `Instructions` and `PreviousResponseId`. `Agent.stream` and other `Agent` methods are awaited. A `switch` on `TranscriptEntry` includes `.reasoning`.
 
 ## Agent Skills
 
